@@ -1,0 +1,23 @@
+{
+  "name": "textlint-v8-bundle",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.mjs"
+  },
+  "dependencies": {
+    "@0x6b/textlint-rule-no-emoji": "0.4.0",
+    "@0x6b/textlint-rule-no-emphasis": "0.1.0",
+    "@0x6b/textlint-rule-no-hr-before-heading": "0.1.0",
+    "@0x6b/textlint-rule-no-numbered-headings-and-bullets": "0.2.0",
+    "@0x6b/textlint-rule-no-smart-quotes": "0.1.0",
+    "@0x6b/textlint-rule-normalize-whitespaces": "1.2.1",
+    "@textlint-ja/textlint-rule-preset-ai-writing": "1.7.0",
+    "@textlint/kernel": "15.5.2",
+    "@textlint/textlint-plugin-markdown": "15.5.2",
+    "textlint-rule-preset-ja-technical-writing": "12.0.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9",
+    "typescript": "5.9.2"
+  }
+}
