@@ -1,3 +1,23 @@
+//! Run an embedded [textlint](https://textlint.org/) bundle from Rust.
+//!
+//! [`Textlint`] lints and fixes Markdown without requiring Node.js or files from
+//! an npm installation at runtime. A `Textlint` instance owns a V8 isolate and
+//! can be reused for multiple documents.
+//!
+//! # Example
+//!
+//! ```no_run
+//! use textlint_v8::Textlint;
+//!
+//! let mut textlint = Textlint::new()?;
+//! let result = textlint.lint("Some Markdown 😀", "document.md")?;
+//! for message in result.messages {
+//!     println!("{}:{}: {}", message.line, message.column, message.message);
+//! }
+//! # Ok::<(), textlint_v8::Error>(())
+//! ```
+#![deny(missing_docs)]
+
 use std::{io::Read as _, marker::PhantomData, rc::Rc, sync::Once};
 
 use flate2::read::GzDecoder;
@@ -23,29 +43,42 @@ static V8_INIT: Once = Once::new();
 /// Errors returned by the public textlint API.
 #[derive(Debug, Error)]
 pub enum Error {
+    /// A request could not be serialized before it was passed to textlint.
     #[error("failed to serialize the textlint request")]
     RequestSerialization(#[source] serde_json::Error),
+    /// V8 failed while preparing or invoking the embedded textlint bundle.
     #[error("V8 operation failed while attempting to {operation}: {message}")]
     V8 {
+        /// The operation that failed.
         operation: &'static str,
+        /// V8's description of the failure.
         message: String,
+        /// The JavaScript stack trace, when V8 provided one.
         stack: Option<String>,
     },
+    /// The embedded textlint JavaScript rejected an operation.
     #[error("textlint JavaScript failed: {message}")]
     JavaScript {
+        /// The value with which the JavaScript promise was rejected.
         message: String,
+        /// The JavaScript stack trace, when the rejected value provided one.
         stack: Option<String>,
     },
+    /// A textlint operation did not settle during V8's microtask checkpoint.
     #[error("the textlint Promise remained pending")]
     PromisePending,
+    /// Textlint returned a response that did not match the expected JSON shape.
     #[error("textlint returned invalid JSON")]
     InvalidResponse {
+        /// The unparsed response returned by textlint.
         response: String,
+        /// The JSON deserialization error.
         #[source]
         source: serde_json::Error,
     },
 }
 
+/// A result returned by this crate's textlint operations.
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Returns the license and attribution notices embedded in this build.
@@ -69,33 +102,58 @@ struct FormatRequest<'a, T: ?Sized> {
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+/// The diagnostics produced by linting one document.
 pub struct LintResult {
+    /// The path supplied to [`Textlint::lint`].
     pub file_path: String,
+    /// The diagnostics reported for the document.
     pub messages: Vec<LintMessage>,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+/// The output and diagnostics produced by fixing one document.
 pub struct FixResult {
+    /// The path supplied to [`Textlint::fix`].
     pub file_path: String,
+    /// The document after textlint applied automatic fixes.
     pub output: String,
+    /// All diagnostics reported during the fix operation.
     pub messages: Vec<LintMessage>,
+    /// The diagnostics whose fixes were applied to [`Self::output`].
     pub applying_messages: Vec<LintMessage>,
+    /// The diagnostics that remain after applying fixes.
     pub remaining_messages: Vec<LintMessage>,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+/// A diagnostic reported by a textlint rule.
 pub struct LintMessage {
+    /// The identifier of the rule that reported the diagnostic.
     pub rule_id: String,
+    /// The human-readable diagnostic message.
     pub message: String,
+    /// The zero-based source index reported by textlint.
     pub index: usize,
+    /// The one-based source line containing the diagnostic.
     pub line: usize,
+    /// The one-based source column containing the diagnostic.
     pub column: usize,
+    /// The textlint severity: `0` for info, `1` for warning, or `2` for error.
     pub severity: usize,
+    /// The zero-based start and end source indices reported by textlint.
     pub range: Vec<usize>,
 }
 
+/// An embedded textlint runtime.
+///
+/// Constructing this type initializes V8 and evaluates the bundled JavaScript.
+/// Reusing an instance avoids repeating that work for every document.
+///
+/// A `Textlint` instance is neither [`Send`] nor [`Sync`] because its V8
+/// isolate is thread-affine. All operations require exclusive access to the
+/// instance.
 pub struct Textlint {
     state: V8State,
     // V8 isolates are thread-affine. Keep that constraint explicit even if
@@ -207,6 +265,15 @@ fn run_script(scope: &mut PinScope, source: &str, operation: &'static str) -> Re
 }
 
 impl Textlint {
+    /// Creates a textlint runtime and evaluates the embedded bundle.
+    ///
+    /// The process-wide V8 platform is initialized only once, even when
+    /// multiple runtimes are created.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if V8 cannot create the runtime or evaluate the
+    /// embedded JavaScript.
     pub fn new() -> Result<Self> {
         V8_INIT.call_once(|| {
             let platform = new_default_platform(0, false).make_shared();
@@ -309,14 +376,43 @@ impl Textlint {
         })
     }
 
+    /// Lints a Markdown document.
+    ///
+    /// `file_path` labels the result and is passed to textlint for rule and
+    /// formatter output; this method does not read the path from the file
+    /// system.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request cannot be serialized, the embedded
+    /// JavaScript fails, or its response cannot be deserialized.
     pub fn lint(&mut self, text: &str, file_path: &str) -> Result<LintResult> {
         self.invoke("lint", &LintRequest { text, file_path })
     }
 
+    /// Applies textlint's automatic fixes to a Markdown document.
+    ///
+    /// `file_path` labels the result; this method neither reads from nor writes
+    /// to the file system. The fixed document is returned in
+    /// [`FixResult::output`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request cannot be serialized, the embedded
+    /// JavaScript fails, or its response cannot be deserialized.
     pub fn fix(&mut self, text: &str, file_path: &str) -> Result<FixResult> {
         self.invoke("fix", &LintRequest { text, file_path })
     }
 
+    /// Formats lint results with one of the embedded textlint formatters.
+    ///
+    /// Supported formatter names are `stylish`, `compact`, `json`,
+    /// `checkstyle`, `junit`, and `tap`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `formatter_name` is unsupported, the embedded
+    /// JavaScript fails, or its response cannot be deserialized.
     pub fn format_lint_results(
         &mut self,
         results: &[LintResult],
@@ -331,6 +427,15 @@ impl Textlint {
         )
     }
 
+    /// Formats fix results with one of the embedded textlint formatters.
+    ///
+    /// Supported formatter names are `stylish`, `compact`, `json`,
+    /// `checkstyle`, `junit`, and `tap`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `formatter_name` is unsupported, the embedded
+    /// JavaScript fails, or its response cannot be deserialized.
     pub fn format_fix_results(
         &mut self,
         results: &[FixResult],
