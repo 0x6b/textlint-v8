@@ -49,9 +49,13 @@ for message in result.messages {
 
 `textlint-rule-no-doubled-conjunctive-particle-ga`は、文ごとにKuromojiキャッシュを迂回する実装になっています。bundle生成時に同じ`kuromojin.tokenize()`キャッシュを使うよう限定的に書き換え、依存パッケージの実装が変わってパッチできなくなった場合はビルドを失敗させます。
 
-## JavaScript bundle の更新
+## JavaScript bundle の生成
 
-Node.js は組み込み bundle を生成するときだけ使用します。生成済みの `dist/textlint-v8.js` は Rust バイナリへ `include_str!` で埋め込まれます。
+`build.rs` がpnpm 12のRust実装をライブラリとして呼び出してnpm依存を取得し、RolldownのRust APIで `dist/textlint-v8.js` を生成します。外部のpnpm CLIやNode.jsプロセスは起動しません。依存パッケージのlifecycle scriptも無効です。生成済みbundleはRustバイナリへ `include_str!` で埋め込まれます。
+
+pnpm 12は現時点でRust crateをcrates.ioへ公開していないため、PoCでは `pnpm/pnpm` のcommitをGit依存として固定しています。公開crateになっているRolldownも、生成結果の再現性のためバージョンを固定しています。
+
+比較・切り戻し用の従来のesbuild経路も `npm run build` として残しています。
 
 ルール設定は `textlint-v8.config.json` に記述します。通常の textlint と同様に、値には `true`、`false`、またはルール固有のオプションオブジェクトを指定できます。設定にないルールは無効です。このファイルもJavaScript bundleへ埋め込まれるため、実行時には必要ありません。
 
@@ -65,16 +69,13 @@ Node.js は組み込み bundle を生成するときだけ使用します。生�
 ```
 
 ```console
-npm ci
-npm run build
 cargo test
 ```
 
 別の設定を埋め込む場合は、ビルド時にパスを指定できます。
 
 ```console
-TEXTLINT_V8_CONFIG=config/strict.json npm run build
-cargo build --release
+TEXTLINT_V8_CONFIG=config/strict.json cargo build --release
 ```
 
 `js/assert-shim.cjs` は、`@textlint/kernel` が AST 検証に使用する Node の `node:assert` のうち、必要な機能だけを提供します。
