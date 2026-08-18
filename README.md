@@ -4,16 +4,16 @@ Rust から V8 上の textlint を呼び出す、組み込み用ハーネスで�
 
 V8はJITを使用するため、実行環境で実行可能メモリの割り当てが許可されている必要があります。`v8` crateのビルド済み静的ライブラリはビルド時に取得され、リリースバイナリへリンクされます。
 
-現在は Markdown と次のルールを静的に組み込んでいます。
+現在は Markdown と次の公開rule ID / preset IDを静的に組み込んでいます。
 
-- `@0x6b/textlint-rule-no-emoji`
-- `@0x6b/textlint-rule-no-emphasis`
-- `@0x6b/textlint-rule-no-hr-before-heading`
-- `@0x6b/textlint-rule-no-numbered-headings-and-bullets`
-- `@0x6b/textlint-rule-no-smart-quotes`
-- `@0x6b/textlint-rule-normalize-whitespaces`
-- `@textlint-ja/textlint-rule-preset-ai-writing`
-- `textlint-rule-preset-ja-technical-writing`
+- `@0x6b/no-emoji`
+- `@0x6b/no-emphasis`
+- `@0x6b/no-hr-before-heading`
+- `@0x6b/no-numbered-headings-and-bullets`
+- `@0x6b/no-smart-quotes`
+- `@0x6b/normalize-whitespaces`
+- `@textlint-ja/preset-ai-writing`
+- `preset-ja-technical-writing`
 
 ## CLI
 
@@ -55,7 +55,16 @@ for message in result.messages {
 
 pnpm 12は現時点でRust crateをcrates.ioへ公開していないため、PoCでは `pnpm/pnpm` のcommitをGit依存として固定しています。公開crateになっているRolldownも、生成結果の再現性のためバージョンを固定しています。
 
-ルール設定は `textlint-v8.config.json` に記述します。通常の textlint と同様に、値には `true`、`false`、またはルール固有のオプションオブジェクトを指定できます。設定にないルールは無効です。このファイルもJavaScript bundleへ埋め込まれるため、実行時には必要ありません。
+`textlint-v8.config.json` の `rules` が、bundleに含める公開rule ID / preset IDの正本です。`build.rs` は各IDから標準命名規則でnpm package名を導出し、`package.json` の `dependencies` に固定semverで宣言されていることを検証します。対応するdependencyがない、versionがrange、またはIDを導出できない場合はビルドが失敗します。kernel、Markdown plugin、kuromojiなど、設定にIDがないdependencyをルールとして扱うことはありません。
+
+| 種別 | 公開ID | 導出するpackage | preset子ruleのprefix |
+| --- | --- | --- | --- |
+| unscoped rule | `foo` | `textlint-rule-foo` | - |
+| scoped rule | `@scope/foo` | `@scope/textlint-rule-foo` | - |
+| unscoped preset | `preset-foo` | `textlint-rule-preset-foo` | `foo` |
+| scoped preset | `@scope/preset-foo` | `@scope/textlint-rule-preset-foo` | `@scope/foo` |
+
+通常のtextlintと同様に、設定値には `true`、`false`、またはルール固有のオプションオブジェクトを指定できます。このファイルはJavaScript bundleへ埋め込まれるため、実行時には必要ありません。検証後、`build.rs` は静的importを持つregistry moduleを `OUT_DIR` へ生成し、Rolldownが `js/index.ts` と一緒にbundleします。registryとbundleは生成物なのでcommitしません。
 
 ```json
 {
@@ -77,6 +86,24 @@ TEXTLINT_V8_CONFIG=config/strict.json cargo build --release
 ```
 
 `js/assert-shim.cjs` は、`@textlint/kernel` が AST 検証に使用する Node の `node:assert` のうち、必要な機能だけを提供します。
+
+## ルールを追加する
+
+1. 単体ruleまたはpresetの公開IDを `textlint-v8.config.json` の `rules` に追加します。presetは名前を `preset-` で始め、値にはpreset全体の設定を指定します。
+2. 上表から導出されるnpm packageを、固定versionで `package.json` の `dependencies` に追加します。
+3. lockfileを安全に更新するため、`TEXTLINT_V8_UPDATE_LOCKFILE=1 cargo build` を一度実行します。これは外部pnpm CLIではなく、build scriptが使用するpnpm Rust APIで `pnpm-lock.yaml` を更新します。その後、環境変数なしの通常ビルドがfrozen lockfileで成功することを確認します。
+4. packageがNode APIを要求する場合に限り、既存の `js/*-shim.*` とRolldown alias、または限定的なRolldown plugin変換を追加します。形態素解析を使うruleでは、既存のKuromoji辞書loaderとRust bridgeで足りるか確認します。
+5. 下記を実行し、診断のrule IDと生成bundleを確認します。
+
+```console
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+rg 'globalThis\.textlintV8' target/debug/build/textlint-v8-*/out/textlint-v8.js
+git status --short # OUT_DIRのregistry/bundleが表示されないこと
+```
+
+Node.jsなしのclean buildも、Node.jsをインストールしていない環境で `rm -rf node_modules && cargo clean && cargo build --locked` を実行して確認できます。依存取得、lockfile検証、bundle生成はすべてRust内で完結します。
 
 ## preset
 

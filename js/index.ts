@@ -1,13 +1,6 @@
 import { TextlintKernel } from "@textlint/kernel";
 import markdownPlugin from "@textlint/textlint-plugin-markdown";
-import noEmoji from "@0x6b/textlint-rule-no-emoji";
-import noEmphasis from "@0x6b/textlint-rule-no-emphasis";
-import noHrBeforeHeading from "@0x6b/textlint-rule-no-hr-before-heading";
-import noNumberedHeadingsAndBullets from "@0x6b/textlint-rule-no-numbered-headings-and-bullets";
-import noSmartQuotes from "@0x6b/textlint-rule-no-smart-quotes";
-import normalizeWhitespaces from "@0x6b/textlint-rule-normalize-whitespaces";
-import aiWritingPreset from "@textlint-ja/textlint-rule-preset-ai-writing";
-import technicalWritingPreset from "textlint-rule-preset-ja-technical-writing";
+import { presetDefinitions, standaloneRules } from "textlint-v8:registry";
 
 type RuleOptions = boolean | Record<string, unknown>;
 
@@ -32,12 +25,6 @@ interface Preset {
   rulesConfig: Record<string, RuleOptions>;
 }
 
-interface PresetDefinition {
-  presetId: string;
-  ruleIdPrefix: string;
-  preset: Preset;
-}
-
 declare const __TEXTLINT_V8_CONFIG__: BuildConfig;
 
 Object.assign(globalThis, {
@@ -45,48 +32,13 @@ Object.assign(globalThis, {
   kuromojin: { dicPath: "embedded" },
 });
 
-const standaloneRules: RuleDefinition[] = [
-  { ruleId: "@0x6b/no-emoji", rule: noEmoji, options: true },
-  { ruleId: "@0x6b/no-emphasis", rule: noEmphasis, options: true },
-  { ruleId: "@0x6b/no-hr-before-heading", rule: noHrBeforeHeading, options: true },
-  {
-    ruleId: "@0x6b/no-numbered-headings-and-bullets",
-    rule: noNumberedHeadingsAndBullets,
-    options: true,
-  },
-  { ruleId: "@0x6b/no-smart-quotes", rule: noSmartQuotes, options: true },
-  { ruleId: "@0x6b/normalize-whitespaces", rule: normalizeWhitespaces, options: true },
-];
-
-const presetDefinitions: PresetDefinition[] = [
-  {
-    presetId: "@textlint-ja/preset-ai-writing",
-    ruleIdPrefix: "@textlint-ja/ai-writing",
-    preset: aiWritingPreset as Preset,
-  },
-  {
-    presetId: "preset-ja-technical-writing",
-    ruleIdPrefix: "ja-technical-writing",
-    preset: technicalWritingPreset as Preset,
-  },
-];
-
-const availableRuleIds = new Set([
-  ...standaloneRules.map(({ ruleId }) => ruleId),
-  ...presetDefinitions.map(({ presetId }) => presetId),
-]);
-for (const ruleId of Object.keys(__TEXTLINT_V8_CONFIG__.rules)) {
-  if (!availableRuleIds.has(ruleId)) {
-    throw new Error(`Unknown bundled textlint rule: ${ruleId}`);
-  }
-}
-
 const configuredRules = standaloneRules.map((definition) => ({
   ...definition,
   options: __TEXTLINT_V8_CONFIG__.rules[definition.ruleId] ?? false,
 }));
 
-for (const { presetId, ruleIdPrefix, preset } of presetDefinitions) {
+for (const { presetId, ruleIdPrefix, preset: untypedPreset } of presetDefinitions) {
+  const preset = untypedPreset as Preset;
   const presetOptions = __TEXTLINT_V8_CONFIG__.rules[presetId];
   const childOverrides =
     presetOptions && typeof presetOptions === "object" ? presetOptions : undefined;

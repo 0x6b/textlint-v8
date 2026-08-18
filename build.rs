@@ -23,10 +23,19 @@ use rolldown::{
         PluginContext, SharedTransformPluginContext,
     },
 };
+use semver::Version;
 use serde_json::{Value, from_slice, to_string};
 use tokio::runtime::Builder;
 
 const PNPM_SOURCE: &str = "pnpm/pnpm@87b9504492d879c05c550def1c8058214ebaac83";
+const REGISTRY_SPECIFIER: &str = "textlint-v8:registry";
+
+#[derive(Debug)]
+struct RulePackage {
+    id: String,
+    package: String,
+    preset_prefix: Option<String>,
+}
 
 #[derive(Debug)]
 struct TextlintBundlePlugin {
@@ -110,7 +119,37 @@ impl Plugin for TextlintBundlePlugin {
     }
 }
 
-fn validate_config(config: &Value) -> Result<()> {
+fn package_for_rule_id(rule_id: &str) -> Result<(String, Option<String>)> {
+    let (scope, name) = if let Some(scoped) = rule_id.strip_prefix('@') {
+        let (scope, name) = scoped
+            .split_once('/')
+            .with_context(|| format!("scoped textlint rule ID must contain '/': {rule_id}"))?;
+        if scope.is_empty() || name.is_empty() || name.contains('/') {
+            bail!("invalid scoped textlint rule ID: {rule_id}");
+        }
+        (Some(format!("@{scope}")), name)
+    } else {
+        if rule_id.is_empty() || rule_id.contains('/') {
+            bail!("invalid unscoped textlint rule ID: {rule_id}");
+        }
+        (None, rule_id)
+    };
+
+    let package = match &scope {
+        Some(scope) => format!("{scope}/textlint-rule-{name}"),
+        None => format!("textlint-rule-{name}"),
+    };
+    let preset_prefix = name.strip_prefix("preset-").map(|name| match &scope {
+        Some(scope) => format!("{scope}/{name}"),
+        None => name.to_owned(),
+    });
+    if preset_prefix.as_deref().is_some_and(str::is_empty) {
+        bail!("preset textlint rule ID must have a name after 'preset-': {rule_id}");
+    }
+    Ok((package, preset_prefix))
+}
+
+fn rule_packages(config: &Value, manifest: &Value) -> Result<Vec<RulePackage>> {
     let config = config
         .as_object()
         .context("textlint config must be an object")?;
@@ -118,28 +157,73 @@ fn validate_config(config: &Value) -> Result<()> {
         .get("rules")
         .and_then(Value::as_object)
         .context("textlint config must contain a rules object")?;
-    let available = [
-        "@0x6b/no-emoji",
-        "@0x6b/no-emphasis",
-        "@0x6b/no-hr-before-heading",
-        "@0x6b/no-numbered-headings-and-bullets",
-        "@0x6b/no-smart-quotes",
-        "@0x6b/normalize-whitespaces",
-        "@textlint-ja/preset-ai-writing",
-        "preset-ja-technical-writing",
-    ];
+    let dependencies = manifest
+        .as_object()
+        .and_then(|manifest| manifest.get("dependencies"))
+        .and_then(Value::as_object)
+        .context("package.json must contain a dependencies object")?;
+    let mut packages = Vec::with_capacity(rules.len());
+
     for (rule_id, options) in rules {
-        if !available.contains(&rule_id.as_str()) {
-            bail!("unknown bundled textlint rule: {rule_id}");
-        }
         if !options.is_boolean() && !options.is_object() {
             bail!("configuration for {rule_id} must be a boolean or object");
         }
+        let (package, preset_prefix) = package_for_rule_id(rule_id)?;
+        let version = dependencies
+            .get(&package)
+            .and_then(Value::as_str)
+            .with_context(|| {
+                format!("textlint rule {rule_id} requires package.json dependency {package}")
+            })?;
+        Version::parse(version).with_context(|| {
+            format!(
+                "textlint rule dependency {package} must use a fixed semantic version, got {version}"
+            )
+        })?;
+        packages.push(RulePackage {
+            id: rule_id.clone(),
+            package,
+            preset_prefix,
+        });
     }
-    Ok(())
+    Ok(packages)
 }
 
-async fn install_dependencies(root: &Path) -> Result<()> {
+fn generate_registry(packages: &[RulePackage], out_dir: &Path) -> Result<PathBuf> {
+    let mut source = String::new();
+    for (index, rule) in packages.iter().enumerate() {
+        source.push_str(&format!(
+            "import rule{index} from {};\n",
+            to_string(&rule.package).context("serialize rule package name")?
+        ));
+    }
+    source.push_str("\nexport const standaloneRules = [\n");
+    for (index, rule) in packages.iter().enumerate() {
+        if rule.preset_prefix.is_none() {
+            source.push_str(&format!(
+                "  {{ ruleId: {}, rule: rule{index} }},\n",
+                to_string(&rule.id).context("serialize rule ID")?
+            ));
+        }
+    }
+    source.push_str("] as const;\n\nexport const presetDefinitions = [\n");
+    for (index, rule) in packages.iter().enumerate() {
+        if let Some(prefix) = &rule.preset_prefix {
+            source.push_str(&format!(
+                "  {{ presetId: {}, ruleIdPrefix: {}, preset: rule{index} }},\n",
+                to_string(&rule.id).context("serialize preset ID")?,
+                to_string(prefix).context("serialize preset rule prefix")?
+            ));
+        }
+    }
+    source.push_str("] as const;\n");
+
+    let path = out_dir.join("textlint-rule-registry.ts");
+    write(&path, source).with_context(|| format!("write {}", path.display()))?;
+    Ok(path)
+}
+
+async fn install_dependencies(root: &Path, update_lockfile: bool) -> Result<()> {
     let manifest = PackageManifest::from_path(root.join("package.json"))
         .context("read package.json for the embedded pnpm installer")?;
     let modules_dir = root.join("node_modules");
@@ -171,7 +255,7 @@ async fn install_dependencies(root: &Path) -> Result<()> {
             DependencyGroup::Dev,
             DependencyGroup::Optional,
         ],
-        frozen_lockfile: true,
+        frozen_lockfile: !update_lockfile,
         prefer_frozen_lockfile: None,
         ignore_manifest_check: false,
         skip_runtimes: false,
@@ -230,7 +314,7 @@ fn copy_dictionaries(root: &Path, out_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn bundle(root: &Path, config: &Value) -> Result<Vec<u8>> {
+async fn bundle(root: &Path, config: &Value, registry_path: &Path) -> Result<Vec<u8>> {
     let absolute = |path: &str| root.join(path).to_string_lossy().into_owned();
     let dictionary_base_loader =
         canonicalize(root.join("node_modules/kuromoji/src/loader/DictionaryLoader.js"))
@@ -238,6 +322,12 @@ async fn bundle(root: &Path, config: &Value) -> Result<Vec<u8>> {
             .to_string_lossy()
             .into_owned();
     let aliases = [
+        (
+            REGISTRY_SPECIFIER,
+            registry_path
+                .to_str()
+                .context("generated registry path is not UTF-8")?,
+        ),
         ("assert", "js/assert-shim.cjs"),
         ("node:assert", "js/assert-shim.cjs"),
         ("path", "js/path-shim.ts"),
@@ -322,8 +412,17 @@ fn main() -> Result<()> {
         .context("OUT_DIR is not set")?;
     let config_path = var_os("TEXTLINT_V8_CONFIG")
         .map_or_else(|| root.join("textlint-v8.config.json"), PathBuf::from);
+    let update_lockfile = match var_os("TEXTLINT_V8_UPDATE_LOCKFILE") {
+        None => false,
+        Some(value) if value == "1" => true,
+        Some(value) => bail!(
+            "TEXTLINT_V8_UPDATE_LOCKFILE must be exactly 1 when set, got {}",
+            value.to_string_lossy()
+        ),
+    };
 
     println!("cargo:rerun-if-env-changed=TEXTLINT_V8_CONFIG");
+    println!("cargo:rerun-if-env-changed=TEXTLINT_V8_UPDATE_LOCKFILE");
     for path in ["package.json", "pnpm-lock.yaml", "js"] {
         println!("cargo:rerun-if-changed={path}");
     }
@@ -334,15 +433,20 @@ fn main() -> Result<()> {
             .with_context(|| format!("read textlint config {}", config_path.display()))?,
     )
     .with_context(|| format!("parse textlint config {}", config_path.display()))?;
-    validate_config(&config)?;
+    let manifest: Value = from_slice(
+        &read(root.join("package.json")).context("read package.json for rule registry")?,
+    )
+    .context("parse package.json for rule registry")?;
+    let packages = rule_packages(&config, &manifest)?;
+    let registry_path = generate_registry(&packages, &out_dir)?;
 
     let runtime = Builder::new_multi_thread()
         .enable_all()
         .build()
         .context("create build runtime")?;
     let bytes = runtime.block_on(async {
-        install_dependencies(&root).await?;
-        bundle(&root, &config).await
+        install_dependencies(&root, update_lockfile).await?;
+        bundle(&root, &config, &registry_path).await
     })?;
 
     copy_dictionaries(&root, &out_dir)?;
