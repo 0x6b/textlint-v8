@@ -1,20 +1,25 @@
-use std::{env, fs, io::Read as _};
+use std::{
+    env::args_os,
+    fs::read_to_string,
+    io::{Read as _, stdin},
+};
 
 use anyhow::{Context as _, Result};
+use serde_json::to_string_pretty;
 use textlint_v8::Textlint;
 
 fn main() -> Result<()> {
-    let paths: Vec<_> = env::args_os().skip(1).collect();
+    let paths: Vec<_> = args_os().skip(1).collect();
     let textlint = Textlint::new()?;
     let results = if paths.is_empty() {
         let mut text = String::new();
-        std::io::stdin().read_to_string(&mut text)?;
+        stdin().read_to_string(&mut text)?;
         vec![textlint.lint(&text, "stdin.md")?]
     } else {
         paths
             .into_iter()
             .map(|path| {
-                let text = fs::read_to_string(&path)
+                let text = read_to_string(&path)
                     .with_context(|| format!("failed to read {}", path.to_string_lossy()))?;
                 let file_path = path.to_string_lossy().into_owned();
                 textlint.lint(&text, &file_path)
@@ -23,9 +28,9 @@ fn main() -> Result<()> {
     };
 
     if let [result] = results.as_slice() {
-        println!("{}", serde_json::to_string_pretty(result)?);
+        println!("{}", to_string_pretty(result)?);
     } else {
-        println!("{}", serde_json::to_string_pretty(&results)?);
+        println!("{}", to_string_pretty(&results)?);
     }
     Ok(())
 }

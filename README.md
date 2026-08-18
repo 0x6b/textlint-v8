@@ -51,7 +51,7 @@ for message in result.messages {
 
 ## JavaScript bundle の生成
 
-`build.rs` がpnpm 12のRust実装をライブラリとして呼び出してnpm依存を取得し、RolldownのRust APIで `dist/textlint-v8.js` を生成します。外部のpnpm CLIやNode.jsプロセスは起動しません。依存パッケージのlifecycle scriptも無効です。生成済みbundleはRustバイナリへ `include_str!` で埋め込まれます。
+`build.rs` がpnpm 12のRust実装をライブラリとして呼び出してnpm依存を取得し、RolldownのRust APIでCargoの `OUT_DIR/textlint-v8.js` を生成します。外部のpnpm CLIやNode.jsプロセスは起動しません。依存パッケージのlifecycle scriptも無効です。生成済みbundleはRustバイナリへ `include_str!` で埋め込まれます。
 
 pnpm 12は現時点でRust crateをcrates.ioへ公開していないため、PoCでは `pnpm/pnpm` のcommitをGit依存として固定しています。公開crateになっているRolldownも、生成結果の再現性のためバージョンを固定しています。
 
@@ -97,4 +97,4 @@ presetはビルド時に子ルールへ静的展開します。通常のtextlint
 
 `true`または指定のない子ルールにはpreset既定値を使います。オプションオブジェクトはpreset既定値とマージせず、通常のtextlintと同様に置き換えます。
 
-形態素解析を使う子ルールのため、Kuromojiの圧縮済み辞書をRustバイナリへ埋め込んでいます。辞書はRust側で展開し、V8へ`ArrayBuffer`として渡すため、実行時のファイルアクセスやNode APIは発生しません。辞書のライセンスとNOTICEは`resources/kuromoji`に収録しています。
+形態素解析を使う子ルールのため、pnpmで取得した `kuromoji@0.1.2` の圧縮済み辞書を `OUT_DIR/kuromoji` へコピーし、Rustバイナリへ埋め込んでいます。辞書はRust側で展開し、V8へ`ArrayBuffer`として渡すため、実行時のファイルアクセスやNode APIは発生しません。辞書のライセンスとNOTICEは`resources/kuromoji`に収録しています。

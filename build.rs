@@ -1,8 +1,15 @@
-use std::{borrow::Cow, env, fs, path::Path, sync::Arc};
+use std::{
+    borrow::Cow,
+    env::var_os,
+    fs::{canonicalize, copy, create_dir_all, read, read_dir, remove_dir_all, write},
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use anyhow::{Context, Result, bail};
 use pnpm_config::Config;
 use pnpm_lockfile::{LazyLockfile, Lockfile, MaybeLazyLockfile};
+use pnpm_network::ThrottledClient;
 use pnpm_package_manager::{Install, ProjectMutation, ResolvedPackages, UpdateSeedPolicy};
 use pnpm_package_manifest::{DependencyGroup, PackageManifest};
 use pnpm_reporter::SilentReporter;
@@ -16,7 +23,8 @@ use rolldown::{
         PluginContext, SharedTransformPluginContext,
     },
 };
-use serde_json::Value;
+use serde_json::{Value, from_slice, to_string};
+use tokio::runtime::Builder;
 
 const PNPM_SOURCE: &str = "pnpm/pnpm@87b9504492d879c05c550def1c8058214ebaac83";
 
@@ -145,7 +153,7 @@ async fn install_dependencies(root: &Path) -> Result<()> {
     let config = config.leak();
     let lockfile = LazyLockfile::deferred(root.to_path_buf());
     let lockfile_path = root.join(Lockfile::FILE_NAME);
-    let http_client = Arc::new(pnpm_network::ThrottledClient::default());
+    let http_client = Arc::new(ThrottledClient::default());
     let resolved_packages = ResolvedPackages::new();
 
     Install {
@@ -194,10 +202,38 @@ async fn install_dependencies(root: &Path) -> Result<()> {
     Ok(())
 }
 
+fn copy_dictionaries(root: &Path, out_dir: &Path) -> Result<()> {
+    let source_dir = root.join("node_modules/kuromoji/dict");
+    let output_dir = out_dir.join("kuromoji");
+    if output_dir.exists() {
+        remove_dir_all(&output_dir).with_context(|| format!("remove {}", output_dir.display()))?;
+    }
+    create_dir_all(&output_dir).with_context(|| format!("create {}", output_dir.display()))?;
+
+    let mut copied = 0;
+    for entry in read_dir(&source_dir)
+        .with_context(|| format!("read Kuromoji dictionaries from {}", source_dir.display()))?
+    {
+        let entry = entry.context("read Kuromoji dictionary entry")?;
+        let source = entry.path();
+        if source.extension().is_none_or(|extension| extension != "gz") {
+            continue;
+        }
+        let output = output_dir.join(entry.file_name());
+        copy(&source, &output)
+            .with_context(|| format!("copy {} to {}", source.display(), output.display()))?;
+        copied += 1;
+    }
+    if copied == 0 {
+        bail!("no Kuromoji dictionaries found in {}", source_dir.display());
+    }
+    Ok(())
+}
+
 async fn bundle(root: &Path, config: &Value) -> Result<Vec<u8>> {
     let absolute = |path: &str| root.join(path).to_string_lossy().into_owned();
     let dictionary_base_loader =
-        fs::canonicalize(root.join("node_modules/kuromoji/src/loader/DictionaryLoader.js"))
+        canonicalize(root.join("node_modules/kuromoji/src/loader/DictionaryLoader.js"))
             .context("locate the installed Kuromoji dictionary loader")?
             .to_string_lossy()
             .into_owned();
@@ -237,7 +273,7 @@ async fn bundle(root: &Path, config: &Value) -> Result<Vec<u8>> {
         define: Some(
             [(
                 "__TEXTLINT_V8_CONFIG__".into(),
-                serde_json::to_string(config).context("serialize textlint config")?,
+                to_string(config).context("serialize textlint config")?,
             )]
             .into_iter()
             .collect(),
@@ -278,12 +314,14 @@ async fn bundle(root: &Path, config: &Value) -> Result<Vec<u8>> {
 }
 
 fn main() -> Result<()> {
-    let root = env::var_os("CARGO_MANIFEST_DIR")
-        .map(std::path::PathBuf::from)
+    let root = var_os("CARGO_MANIFEST_DIR")
+        .map(PathBuf::from)
         .context("CARGO_MANIFEST_DIR is not set")?;
-    let config_path = env::var_os("TEXTLINT_V8_CONFIG")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| root.join("textlint-v8.config.json"));
+    let out_dir = var_os("OUT_DIR")
+        .map(PathBuf::from)
+        .context("OUT_DIR is not set")?;
+    let config_path = var_os("TEXTLINT_V8_CONFIG")
+        .map_or_else(|| root.join("textlint-v8.config.json"), PathBuf::from);
 
     println!("cargo:rerun-if-env-changed=TEXTLINT_V8_CONFIG");
     for path in ["package.json", "pnpm-lock.yaml", "js"] {
@@ -291,14 +329,14 @@ fn main() -> Result<()> {
     }
     println!("cargo:rerun-if-changed={}", config_path.display());
 
-    let config: Value = serde_json::from_slice(
-        &fs::read(&config_path)
+    let config: Value = from_slice(
+        &read(&config_path)
             .with_context(|| format!("read textlint config {}", config_path.display()))?,
     )
     .with_context(|| format!("parse textlint config {}", config_path.display()))?;
     validate_config(&config)?;
 
-    let runtime = tokio::runtime::Builder::new_multi_thread()
+    let runtime = Builder::new_multi_thread()
         .enable_all()
         .build()
         .context("create build runtime")?;
@@ -307,9 +345,9 @@ fn main() -> Result<()> {
         bundle(&root, &config).await
     })?;
 
-    let output = root.join("dist/textlint-v8.js");
-    fs::create_dir_all(output.parent().expect("dist output has a parent"))?;
-    fs::write(&output, bytes).with_context(|| format!("write {}", output.display()))?;
+    copy_dictionaries(&root, &out_dir)?;
+    let output = out_dir.join("textlint-v8.js");
+    write(&output, bytes).with_context(|| format!("write {}", output.display()))?;
     println!("cargo:warning=npm dependencies installed with {PNPM_SOURCE}");
     println!(
         "cargo:warning=embedded textlint config: {}",
