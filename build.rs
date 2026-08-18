@@ -626,14 +626,14 @@ async fn bundle(root: &Path, config: &Value, registry_path: &Path) -> Result<Bun
                 .to_str()
                 .context("generated registry path is not UTF-8")?,
         ),
-        ("assert", "js/assert-shim.cjs"),
-        ("node:assert", "js/assert-shim.cjs"),
-        ("path", "js/path-shim.ts"),
-        ("node:path", "js/path-shim.ts"),
-        ("os", "js/os-shim.ts"),
-        ("node:os", "js/os-shim.ts"),
-        ("fs", "js/fs-shim.ts"),
-        ("node:fs", "js/fs-shim.ts"),
+        ("assert", "js/shim/assert.cjs"),
+        ("node:assert", "js/shim/assert.cjs"),
+        ("path", "js/shim/path.ts"),
+        ("node:path", "js/shim/path.ts"),
+        ("os", "js/shim/os.ts"),
+        ("node:os", "js/shim/os.ts"),
+        ("fs", "js/shim/fs.ts"),
+        ("node:fs", "js/shim/fs.ts"),
     ]
     .into_iter()
     .map(|(name, path)| (name.to_string(), vec![Some(absolute(path))]))

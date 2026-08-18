@@ -80,14 +80,14 @@ cargo test
 TEXTLINT_V8_CONFIG=config/strict.json cargo build --release
 ```
 
-`js/assert-shim.cjs` は、`@textlint/kernel` が AST 検証に使用する Node の `node:assert` のうち、必要な機能だけを提供します。
+`js/shim/assert.cjs` は、`@textlint/kernel` が AST 検証に使用する Node の `node:assert` のうち、必要な機能だけを提供します。
 
 ## ルールを追加する
 
 1. 単体ruleまたはpresetの公開IDを `textlint-v8.config.json` の `rules` に追加します。presetは名前を `preset-` で始め、値にはpreset全体の設定を指定します。
 2. 上表から導出されるnpm packageを、固定versionで `package.json` の `dependencies` に追加します。
 3. lockfileを安全に更新するため、`TEXTLINT_V8_UPDATE_LOCKFILE=1 cargo build` を一度実行します。これは外部pnpm CLIではなく、build scriptが使用するpnpm Rust APIで `pnpm-lock.yaml` を更新します。その後、環境変数なしの通常ビルドがfrozen lockfileで成功することを確認します。
-4. packageがNode APIを要求する場合に限り、既存の `js/*-shim.*` とRolldown alias、または限定的なRolldown plugin変換を追加します。形態素解析を使うruleでは、既存のKuromoji辞書loaderとRust bridgeで足りるか確認します。
+4. packageがNode APIを要求する場合に限り、既存の `js/shim/` とRolldown alias、または限定的なRolldown plugin変換を追加します。形態素解析を使うruleでは、既存のKuromoji辞書loaderとRust bridgeで足りるか確認します。
 5. 下記を実行し、診断のrule IDと生成bundleを確認します。
 
 有効なpresetが同じruleを子ruleとして含む場合は、preset側の子ruleを `false` にします。textlint kernelは同じrule実装と設定の組み合わせを重複排除するため、両方を有効にすると先に登録されたrule IDだけが診断に使われます。たとえば [`@textlint-rule/no-invalid-control-character`](https://github.com/textlint-rule/textlint-rule-no-invalid-control-character) は `preset-ja-technical-writing` にも含まれるため、このリポジトリの設定ではpreset側を無効にしています。
