@@ -1,22 +1,57 @@
-use std::{cell::RefCell, io::Read as _, sync::Once};
+use std::{io::Read as _, marker::PhantomData, rc::Rc, sync::Once};
 
-use anyhow::{Context as _, Result, anyhow, bail};
 use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, to_string};
+use thiserror::Error;
 use v8::{
     ArrayBuffer, Context, ContextScope, CreateParams, Exception, Function,
     FunctionCallbackArguments, Global, Isolate, Local, MicrotasksPolicy, Object, OwnedIsolate,
-    PinScope, Promise, PromiseState, ReturnValue, Script, V8, new_default_platform,
+    PinScope, Promise, PromiseState, ReturnValue, Script, V8, Value, new_default_platform,
 };
 
 const TEXTLINT_BUNDLE: &str = include_str!(concat!(env!("OUT_DIR"), "/textlint-v8.js"));
+const THIRD_PARTY_NOTICES: &str =
+    include_str!(concat!(env!("OUT_DIR"), "/THIRD_PARTY_NOTICES.txt"));
 const V8_PRELUDE: &str = r"
 globalThis.console = {
   log() {}, debug() {}, info() {}, warn() {}, error() {}
 };
 ";
 static V8_INIT: Once = Once::new();
+
+/// Errors returned by the public textlint API.
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("failed to serialize the lint request")]
+    RequestSerialization(#[source] serde_json::Error),
+    #[error("V8 operation failed while attempting to {operation}: {message}")]
+    V8 {
+        operation: &'static str,
+        message: String,
+        stack: Option<String>,
+    },
+    #[error("textlint JavaScript failed: {message}")]
+    JavaScript {
+        message: String,
+        stack: Option<String>,
+    },
+    #[error("the textlint Promise remained pending")]
+    PromisePending,
+    #[error("textlint returned invalid JSON")]
+    InvalidResponse {
+        response: String,
+        #[source]
+        source: serde_json::Error,
+    },
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+/// Returns the license and attribution notices embedded in this build.
+pub const fn third_party_notices() -> &'static str {
+    THIRD_PARTY_NOTICES
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,7 +80,10 @@ pub struct LintMessage {
 }
 
 pub struct Textlint {
-    state: RefCell<V8State>,
+    state: V8State,
+    // V8 isolates are thread-affine. Keep that constraint explicit even if
+    // rusty_v8 changes its auto-trait implementations.
+    _not_send_or_sync: PhantomData<Rc<()>>,
 }
 
 struct V8State {
@@ -113,14 +151,49 @@ fn load_dictionary(
     return_value.set(buffer.into());
 }
 
-fn run_script(scope: &mut PinScope, source: &str, label: &str) -> Result<()> {
-    let source = v8::String::new(scope, source)
-        .ok_or_else(|| anyhow!("failed to allocate V8 source for {label}"))?;
-    let script =
-        Script::compile(scope, source, None).ok_or_else(|| anyhow!("failed to compile {label}"))?;
-    script
-        .run(scope)
-        .ok_or_else(|| anyhow!("failed to evaluate {label}"))?;
+fn v8_error(
+    scope: &mut PinScope,
+    operation: &'static str,
+    exception: Option<Local<Value>>,
+    stack: Option<Local<Value>>,
+) -> Error {
+    Error::V8 {
+        operation,
+        message: exception
+            .map(|value| value.to_rust_string_lossy(scope))
+            .unwrap_or_else(|| "V8 returned no exception details".to_owned()),
+        stack: stack.map(|value| value.to_rust_string_lossy(scope)),
+    }
+}
+
+fn javascript_error(scope: &mut PinScope, value: Local<Value>) -> Error {
+    let message = value.to_rust_string_lossy(scope);
+    let stack = Local::<Object>::try_from(value).ok().and_then(|object| {
+        let name = v8::String::new(scope, "stack")?;
+        object
+            .get(scope, name.into())
+            .map(|stack| stack.to_rust_string_lossy(scope))
+    });
+    Error::JavaScript { message, stack }
+}
+
+fn run_script(scope: &mut PinScope, source: &str, operation: &'static str) -> Result<()> {
+    v8::tc_scope!(let scope, scope);
+    let Some(source) = v8::String::new(scope, source) else {
+        let exception = scope.exception();
+        let stack = scope.stack_trace();
+        return Err(v8_error(scope, operation, exception, stack));
+    };
+    let Some(script) = Script::compile(scope, source, None) else {
+        let exception = scope.exception();
+        let stack = scope.stack_trace();
+        return Err(v8_error(scope, operation, exception, stack));
+    };
+    if script.run(scope).is_none() {
+        let exception = scope.exception();
+        let stack = scope.stack_trace();
+        return Err(v8_error(scope, operation, exception, stack));
+    }
     Ok(())
 }
 
@@ -139,79 +212,103 @@ impl Textlint {
             let context = Context::new(scope, Default::default());
             let scope = &mut ContextScope::new(scope, context);
 
-            let loader = Function::new(scope, load_dictionary)
-                .ok_or_else(|| anyhow!("failed to create dictionary loader"))?;
-            let loader_name = v8::String::new(scope, "__loadKuromojiDictionary")
-                .ok_or_else(|| anyhow!("failed to allocate dictionary loader name"))?;
+            let loader = Function::new(scope, load_dictionary).ok_or_else(|| Error::V8 {
+                operation: "create the dictionary loader",
+                message: "V8 returned no function".to_owned(),
+                stack: None,
+            })?;
+            let loader_name =
+                v8::String::new(scope, "__loadKuromojiDictionary").ok_or_else(|| Error::V8 {
+                    operation: "allocate the dictionary loader name",
+                    message: "V8 returned no string".to_owned(),
+                    stack: None,
+                })?;
             if !context
                 .global(scope)
                 .set(scope, loader_name.into(), loader.into())
                 .unwrap_or(false)
             {
-                bail!("failed to install dictionary loader");
+                return Err(Error::V8 {
+                    operation: "install the dictionary loader",
+                    message: "V8 rejected the global property".to_owned(),
+                    stack: None,
+                });
             }
 
-            run_script(scope, V8_PRELUDE, "V8 prelude")?;
-            run_script(scope, TEXTLINT_BUNDLE, "embedded textlint bundle")?;
+            run_script(scope, V8_PRELUDE, "evaluate the V8 prelude")?;
+            run_script(
+                scope,
+                TEXTLINT_BUNDLE,
+                "evaluate the embedded textlint bundle",
+            )?;
             Global::new(scope, context)
         };
 
         Ok(Self {
-            state: RefCell::new(V8State { context, isolate }),
+            state: V8State { context, isolate },
+            _not_send_or_sync: PhantomData,
         })
     }
 
-    pub fn lint(&self, text: &str, file_path: &str) -> Result<LintResult> {
-        let request = to_string(&LintRequest { text, file_path })?;
-        let mut state = self.state.borrow_mut();
-        let V8State { context, isolate } = &mut *state;
+    pub fn lint(&mut self, text: &str, file_path: &str) -> Result<LintResult> {
+        let request =
+            to_string(&LintRequest { text, file_path }).map_err(Error::RequestSerialization)?;
+        let V8State { context, isolate } = &mut self.state;
         v8::scope!(let scope, isolate);
         let context = Local::new(scope, &*context);
         let scope = &mut ContextScope::new(scope, context);
+        v8::tc_scope!(let scope, scope);
 
-        let api_name = v8::String::new(scope, "textlintV8").unwrap();
-        let api = context
-            .global(scope)
-            .get(scope, api_name.into())
-            .ok_or_else(|| anyhow!("textlintV8 is not defined"))?;
-        let api = v8::Local::<Object>::try_from(api)
-            .map_err(|_| anyhow!("textlintV8 is not an object"))?;
-        let lint_name = v8::String::new(scope, "lint").unwrap();
-        let lint = api
-            .get(scope, lint_name.into())
-            .ok_or_else(|| anyhow!("textlintV8.lint is not defined"))?;
-        let lint = v8::Local::<Function>::try_from(lint)
-            .map_err(|_| anyhow!("textlintV8.lint is not a function"))?;
-        let request = v8::String::new(scope, &request)
-            .ok_or_else(|| anyhow!("failed to allocate lint request"))?;
-        let promise = lint
-            .call(scope, api.into(), &[request.into()])
-            .ok_or_else(|| anyhow!("textlintV8.lint threw an exception"))?;
-        let promise = v8::Local::<Promise>::try_from(promise)
-            .map_err(|_| anyhow!("textlintV8.lint did not return a Promise"))?;
+        let result = (|| {
+            let api_name = v8::String::new(scope, "textlintV8")?;
+            let api = context.global(scope).get(scope, api_name.into())?;
+            let api = v8::Local::<Object>::try_from(api).ok()?;
+            let lint_name = v8::String::new(scope, "lint")?;
+            let lint = api.get(scope, lint_name.into())?;
+            let lint = v8::Local::<Function>::try_from(lint).ok()?;
+            let request = v8::String::new(scope, &request)?;
+            lint.call(scope, api.into(), &[request.into()])
+        })();
+        let Some(result) = result else {
+            let exception = scope.exception();
+            let stack = scope.stack_trace();
+            return Err(v8_error(scope, "invoke textlintV8.lint", exception, stack));
+        };
+        let promise = v8::Local::<Promise>::try_from(result).map_err(|_| Error::V8 {
+            operation: "invoke textlintV8.lint",
+            message: "textlintV8.lint did not return a Promise".to_owned(),
+            stack: None,
+        })?;
 
         scope.perform_microtask_checkpoint();
         match promise.state() {
-            PromiseState::Pending => bail!("textlint Promise remained pending"),
+            PromiseState::Pending => return Err(Error::PromisePending),
             PromiseState::Rejected => {
-                let error = promise.result(scope).to_rust_string_lossy(scope);
-                bail!("textlint failed: {error}");
+                let error = promise.result(scope);
+                return Err(javascript_error(scope, error));
             }
             PromiseState::Fulfilled => {}
         }
 
         let output = promise.result(scope).to_rust_string_lossy(scope);
-        from_str(&output).context("textlint returned invalid JSON")
+        from_str(&output).map_err(|source| Error::InvalidResponse {
+            response: output,
+            source,
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Textlint;
+    use static_assertions::assert_not_impl_any;
+
+    use super::{Textlint, third_party_notices};
+
+    assert_not_impl_any!(Textlint: Send, Sync);
 
     #[test]
     fn reports_standalone_and_preset_rules() {
-        let textlint = Textlint::new().unwrap();
+        let mut textlint = Textlint::new().unwrap();
         let result = textlint
             .lint(
                 "# 1. “見出し” 😀\n\n*強調*\n\n---\n\n## 次\n\n1. 箇条書き\n\n特殊　空白\n\n革命的な技術です。\n\nこれは見ることができないわけではない。\n",
@@ -239,5 +336,13 @@ mod tests {
         assert!(second_result.messages.iter().any(|message| {
             message.rule_id == "ja-technical-writing/no-doubled-conjunctive-particle-ga"
         }));
+    }
+
+    #[test]
+    fn embeds_third_party_notices() {
+        let notices = third_party_notices();
+        assert!(notices.contains("kuromoji 0.1.2"));
+        assert!(notices.contains("@textlint/kernel 15.5.2"));
+        assert!(notices.contains("mecab-ipadic-2.7.0-20070801"));
     }
 }

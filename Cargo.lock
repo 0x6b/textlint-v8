@@ -6341,9 +6341,12 @@ dependencies = [
  "pnpm-reporter",
  "pnpm-tarball",
  "rolldown",
+ "rolldown_common",
  "semver",
  "serde",
  "serde_json",
+ "static_assertions",
+ "thiserror 2.0.20",
  "tokio",
  "v8",
 ]

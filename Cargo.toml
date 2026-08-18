@@ -9,6 +9,7 @@ anyhow = "1.0.99"
 flate2 = "1.1.2"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
+thiserror = "2"
 v8 = "=152.1.0"
 
 [build-dependencies]
@@ -21,9 +22,13 @@ pnpm-package-manifest = { git = "https://github.com/pnpm/pnpm", rev = "87b950449
 pnpm-reporter = { git = "https://github.com/pnpm/pnpm", rev = "87b9504492d879c05c550def1c8058214ebaac83" }
 pnpm-tarball = { git = "https://github.com/pnpm/pnpm", rev = "87b9504492d879c05c550def1c8058214ebaac83" }
 rolldown = "=1.2.4"
+rolldown_common = "=1.2.4"
 semver = "1"
 serde_json = "1.0.143"
 tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[dev-dependencies]
+static_assertions = "1"
 
 [profile.dev]
 opt-level = 1

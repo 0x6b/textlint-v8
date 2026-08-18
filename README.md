@@ -23,6 +23,7 @@ V8はJITを使用するため、実行環境で実行可能メモリの割り当
 cargo run -- document.md
 cargo run -- first.md second.md
 cat document.md | cargo run
+cargo run -- --licenses
 ```
 
 リリースバイナリの実行に Node.js は必要ありません。
@@ -35,23 +36,26 @@ env -u PATH ./target/release/textlint-v8 document.md
 ## Rust API
 
 ```rust
-use textlint_v8::Textlint;
+use textlint_v8::{Textlint, third_party_notices};
 
-let textlint = Textlint::new()?;
+let mut textlint = Textlint::new()?;
 let result = textlint.lint("本文 😀", "document.md")?;
 for message in result.messages {
     println!("{}:{}: {}", message.line, message.column, message.message);
 }
-# Ok::<(), anyhow::Error>(())
+println!("{}", third_party_notices());
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-`Textlint` は bundle を一度だけ評価します。同じインスタンスを再利用すると、文書ごとにV8を初期化する必要がありません。
+`Textlint` は bundle を一度だけ評価します。同じインスタンスを再利用すると、文書ごとにV8を初期化する必要がありません。V8 isolateのスレッド制約を型で表すため、`Textlint` は `Send` / `Sync` ではなく、`lint` は `&mut self` を要求します。公開APIは `textlint_v8::Error` を返し、request serialization、V8操作、JavaScript例外、pending Promise、不正なresponseを判別できます。JavaScript例外ではmessageと取得可能なstackを保持します。
+
+`third_party_notices()` は、このbuildの最終成果物に含まれるRust/V8依存、Rolldownが実際にbundleへ出力したnpm package、およびKuromoji辞書のライセンスとNOTICEを返します。CLIでは `--licenses`（`--third-party-licenses` も可）で同じ内容を表示します。npm部分は固定lockfileからbuild時に生成し、生成済みNOTICE自体はcommitしません。buildにのみ使うpnpm/RolldownのRust crateは配布バイナリの表示対象に含めません。
 
 `textlint-rule-no-doubled-conjunctive-particle-ga`は、文ごとにKuromojiキャッシュを迂回する実装になっています。bundle生成時に同じ`kuromojin.tokenize()`キャッシュを使うよう限定的に書き換え、依存パッケージの実装が変わってパッチできなくなった場合はビルドを失敗させます。
 
 ## JavaScript bundle の生成
 
-`build.rs` がpnpm 12のRust実装をライブラリとして呼び出してnpm依存を取得し、RolldownのRust APIでCargoの `OUT_DIR/textlint-v8.js` を生成します。外部のpnpm CLIやNode.jsプロセスは起動しません。依存パッケージのlifecycle scriptも無効です。生成済みbundleはRustバイナリへ `include_str!` で埋め込まれます。
+`build.rs` がpnpm 12のRust実装をライブラリとして呼び出してnpm依存を取得し、RolldownのRust APIでCargoの `OUT_DIR/textlint-v8.js` を生成します。npm workspace、`node_modules`、pnpm store、生成registry、bundle、辞書コピー、第三者NOTICEはすべて `OUT_DIR` 内で完結し、consumerと依存crateのソースディレクトリへ書き込みません。外部のpnpm CLIやNode.jsプロセスは起動しません。依存パッケージのlifecycle scriptも無効です。生成済みbundleとNOTICEはRustバイナリへ `include_str!` で埋め込まれます。
 
 pnpm 12は現時点でRust crateをcrates.ioへ公開していないため、PoCでは `pnpm/pnpm` のcommitをGit依存として固定しています。公開crateになっているRolldownも、生成結果の再現性のためバージョンを固定しています。
 
@@ -100,10 +104,11 @@ cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 rg 'globalThis\.textlintV8' target/debug/build/textlint-v8-*/out/textlint-v8.js
+cargo run -- --licenses | rg '@textlint/kernel|mecab-ipadic'
 git status --short # OUT_DIRのregistry/bundleが表示されないこと
 ```
 
-Node.jsなしのclean buildも、Node.jsをインストールしていない環境で `rm -rf node_modules && cargo clean && cargo build --locked` を実行して確認できます。依存取得、lockfile検証、bundle生成はすべてRust内で完結します。
+Node.jsなしのclean buildも、Node.jsをインストールしていない環境で `cargo clean && cargo build --locked` を実行して確認できます。依存取得、lockfile検証、bundle生成はすべてRust内で完結し、ソースツリーに `node_modules` やpnpm storeを作りません。
 
 ## preset
 
