@@ -8,13 +8,45 @@ V8はJITを使用するため、実行環境で実行可能メモリの割り当
 
 ## CLI
 
-ファイルを指定するか、標準入力へ Markdown を渡します。診断結果は JSON です。複数ファイルを指定した場合は同じ`Textlint`インスタンスを再利用し、結果の配列を出力します。
+ファイルを指定するか、標準入力へ Markdown を渡します。既定の出力形式は旧`textlint-standalone`と同じ`stylish`です。`--formatter`では`stylish`、`compact`、`json`、`checkstyle`、`junit`、`tap`を指定できます。複数ファイルを指定した場合は同じ`Textlint`インスタンスを再利用します。
+
+`--fix`をファイルとともに指定すると、修正結果を各ファイルへ書き戻してから診断を表示します。標準入力へ指定した場合は、formatterを使わず修正後のMarkdownだけを標準出力へ書きます。
 
 ```console
 cargo run -- document.md
+cargo run -- --formatter json document.md
+cargo run -- --fix document.md
 cargo run -- first.md second.md
 cat document.md | cargo run
+cat document.md | cargo run -- --fix
 cargo run -- --licenses
+```
+
+### 実行例
+
+既定の`stylish`では、診断位置、メッセージ、rule ID、件数を表示します。
+
+```console
+$ printf '本文😀です。\n' | cargo run --quiet
+
+stdin.md
+  1:3  error  Found emoji character (\ud83d\ude00)  @0x6b/no-emoji
+
+✖ 1 problem (1 error, 0 warnings, 0 infos)
+```
+
+同じ診断をJSONで出力できます。
+
+```console
+$ printf '本文😀です。\n' | cargo run --quiet -- --formatter json
+[{"filePath":"stdin.md","messages":[{"ruleId":"@0x6b/no-emoji","message":"Found emoji character (\\ud83d\\ude00)","index":2,"line":1,"column":3,"severity":2,"range":[2,3]}]}]
+```
+
+標準入力を`--fix`すると、修正後の本文だけを出力します。この例では全角空白が半角空白になります。
+
+```console
+$ printf '特殊　空白\n' | cargo run --quiet -- --fix
+特殊 空白
 ```
 
 リリースバイナリの実行に Node.js は必要ありません。
@@ -34,11 +66,13 @@ let result = textlint.lint("本文 😀", "document.md")?;
 for message in result.messages {
     println!("{}:{}: {}", message.line, message.column, message.message);
 }
+let fixed = textlint.fix("特殊　空白", "document.md")?;
+assert_eq!(fixed.output, "特殊 空白");
 println!("{}", third_party_notices());
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-`Textlint` は bundle を一度だけ評価します。同じインスタンスを再利用すると、文書ごとにV8を初期化する必要がありません。V8 isolateのスレッド制約を型で表すため、`Textlint` は `Send` / `Sync` ではなく、`lint` は `&mut self` を要求します。公開APIは `textlint_v8::Error` を返し、request serialization、V8操作、JavaScript例外、pending Promise、不正なresponseを判別できます。JavaScript例外ではmessageと取得可能なstackを保持します。
+`Textlint` は bundle を一度だけ評価します。同じインスタンスを再利用すると、文書ごとにV8を初期化する必要がありません。`fix`は修正後の本文、適用した診断、残った診断を返します。`format_lint_results`と`format_fix_results`ではCLIと同じformatterを利用できます。V8 isolateのスレッド制約を型で表すため、`Textlint` は `Send` / `Sync` ではなく、各操作は `&mut self` を要求します。公開APIは `textlint_v8::Error` を返し、request serialization、V8操作、JavaScript例外、pending Promise、不正なresponseを判別できます。JavaScript例外ではmessageと取得可能なstackを保持します。
 
 `third_party_notices()` は、このbuildの最終成果物に含まれるRust/V8依存、Rolldownが実際にbundleへ出力したnpm package、およびKuromoji辞書のライセンスとNOTICEを返します。CLIでは `--licenses`（`--third-party-licenses` も可）で同じ内容を表示します。npm部分は固定lockfileからbuild時に生成し、生成済みNOTICE自体はcommitしません。buildにのみ使うpnpm/RolldownのRust crateは配布バイナリの表示対象に含めません。
 

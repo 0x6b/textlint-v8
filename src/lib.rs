@@ -23,7 +23,7 @@ static V8_INIT: Once = Once::new();
 /// Errors returned by the public textlint API.
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("failed to serialize the lint request")]
+    #[error("failed to serialize the textlint request")]
     RequestSerialization(#[source] serde_json::Error),
     #[error("V8 operation failed while attempting to {operation}: {message}")]
     V8 {
@@ -60,11 +60,28 @@ struct LintRequest<'a> {
     file_path: &'a str,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FormatRequest<'a, T: ?Sized> {
+    formatter_name: &'a str,
+    results: &'a T,
+}
+
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct LintResult {
     pub file_path: String,
     pub messages: Vec<LintMessage>,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FixResult {
+    pub file_path: String,
+    pub output: String,
+    pub messages: Vec<LintMessage>,
+    pub applying_messages: Vec<LintMessage>,
+    pub remaining_messages: Vec<LintMessage>,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -242,9 +259,12 @@ impl Textlint {
         })
     }
 
-    pub fn lint(&mut self, text: &str, file_path: &str) -> Result<LintResult> {
-        let request =
-            to_string(&LintRequest { text, file_path }).map_err(Error::RequestSerialization)?;
+    fn invoke<Request: Serialize + ?Sized, Response: for<'de> Deserialize<'de>>(
+        &mut self,
+        method: &'static str,
+        request: &Request,
+    ) -> Result<Response> {
+        let request = to_string(request).map_err(Error::RequestSerialization)?;
         let V8State { context, isolate } = &mut self.state;
         v8::scope!(let scope, isolate);
         let context = Local::new(scope, &*context);
@@ -255,20 +275,20 @@ impl Textlint {
             let api_name = v8::String::new(scope, "textlintV8")?;
             let api = context.global(scope).get(scope, api_name.into())?;
             let api = v8::Local::<Object>::try_from(api).ok()?;
-            let lint_name = v8::String::new(scope, "lint")?;
-            let lint = api.get(scope, lint_name.into())?;
-            let lint = v8::Local::<Function>::try_from(lint).ok()?;
+            let method_name = v8::String::new(scope, method)?;
+            let function = api.get(scope, method_name.into())?;
+            let function = v8::Local::<Function>::try_from(function).ok()?;
             let request = v8::String::new(scope, &request)?;
-            lint.call(scope, api.into(), &[request.into()])
+            function.call(scope, api.into(), &[request.into()])
         })();
         let Some(result) = result else {
             let exception = scope.exception();
             let stack = scope.stack_trace();
-            return Err(v8_error(scope, "invoke textlintV8.lint", exception, stack));
+            return Err(v8_error(scope, method, exception, stack));
         };
         let promise = v8::Local::<Promise>::try_from(result).map_err(|_| Error::V8 {
-            operation: "invoke textlintV8.lint",
-            message: "textlintV8.lint did not return a Promise".to_owned(),
+            operation: method,
+            message: format!("textlintV8.{method} did not return a Promise"),
             stack: None,
         })?;
 
@@ -287,6 +307,42 @@ impl Textlint {
             response: output,
             source,
         })
+    }
+
+    pub fn lint(&mut self, text: &str, file_path: &str) -> Result<LintResult> {
+        self.invoke("lint", &LintRequest { text, file_path })
+    }
+
+    pub fn fix(&mut self, text: &str, file_path: &str) -> Result<FixResult> {
+        self.invoke("fix", &LintRequest { text, file_path })
+    }
+
+    pub fn format_lint_results(
+        &mut self,
+        results: &[LintResult],
+        formatter_name: &str,
+    ) -> Result<String> {
+        self.invoke(
+            "format",
+            &FormatRequest {
+                formatter_name,
+                results,
+            },
+        )
+    }
+
+    pub fn format_fix_results(
+        &mut self,
+        results: &[FixResult],
+        formatter_name: &str,
+    ) -> Result<String> {
+        self.invoke(
+            "format",
+            &FormatRequest {
+                formatter_name,
+                results,
+            },
+        )
     }
 }
 
@@ -329,6 +385,27 @@ mod tests {
         assert!(second_result.messages.iter().any(|message| {
             message.rule_id == "ja-technical-writing/no-doubled-conjunctive-particle-ga"
         }));
+    }
+
+    #[test]
+    fn fixes_text_and_formats_results() {
+        let mut textlint = Textlint::new().unwrap();
+        let fixed = textlint.fix("特殊　空白", "sample.md").unwrap();
+
+        assert_eq!(fixed.output, "特殊 空白");
+        assert!(
+            fixed
+                .applying_messages
+                .iter()
+                .any(|message| message.rule_id == "@0x6b/normalize-whitespaces")
+        );
+
+        let json = textlint.format_fix_results(&[fixed], "json").unwrap();
+        assert!(json.contains("\"output\":\"特殊 空白\""));
+
+        let lint = textlint.lint("本文 😀", "sample.md").unwrap();
+        let stylish = textlint.format_lint_results(&[lint], "stylish").unwrap();
+        assert!(stylish.contains("@0x6b/no-emoji"));
     }
 
     #[test]

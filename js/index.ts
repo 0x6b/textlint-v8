@@ -1,5 +1,11 @@
 import { TextlintKernel } from "@textlint/kernel";
 import markdownPlugin from "@textlint/textlint-plugin-markdown";
+import checkstyleFormatter from "@textlint/linter-formatter/lib/src/formatters/checkstyle.js";
+import compactFormatter from "@textlint/linter-formatter/lib/src/formatters/compact.js";
+import jsonFormatter from "@textlint/linter-formatter/lib/src/formatters/json.js";
+import junitFormatter from "@textlint/linter-formatter/lib/src/formatters/junit.js";
+import stylishFormatter from "@textlint/linter-formatter/lib/src/formatters/stylish.js";
+import tapFormatter from "@textlint/linter-formatter/lib/src/formatters/tap.js";
 import { presetDefinitions, standaloneRules } from "textlint-v8:registry";
 
 type RuleOptions = boolean | Record<string, unknown>;
@@ -8,6 +14,11 @@ interface LintRequest {
   text: string;
   filePath?: string;
   rules?: Record<string, RuleOptions>;
+}
+
+interface FormatRequest {
+  formatterName: string;
+  results: unknown[];
 }
 
 interface RuleDefinition {
@@ -87,9 +98,51 @@ async function lint(requestJson: string): Promise<string> {
   return JSON.stringify(result);
 }
 
-globalThis.textlintV8 = { lint };
+async function fix(requestJson: string): Promise<string> {
+  const request = JSON.parse(requestJson) as LintRequest;
+  if (typeof request.text !== "string") {
+    throw new TypeError("request.text must be a string");
+  }
+
+  const kernel = new TextlintKernel();
+  const result = await kernel.fixText(request.text, {
+    ext: ".md",
+    filePath: request.filePath ?? "input.md",
+    configBaseDir: "/",
+    plugins: [{ pluginId: "markdown", plugin: markdownPlugin, options: true }],
+    rules: selectRules(request.rules) as never,
+    filterRules: [],
+  });
+  return JSON.stringify(result);
+}
+
+const formatters: Record<string, (results: never[], options?: unknown) => string> = {
+  checkstyle: checkstyleFormatter,
+  compact: compactFormatter,
+  json: jsonFormatter,
+  junit: junitFormatter,
+  stylish: stylishFormatter,
+  tap: tapFormatter,
+};
+
+async function format(requestJson: string): Promise<string> {
+  const request = JSON.parse(requestJson) as FormatRequest;
+  const formatter = formatters[request.formatterName];
+  if (!formatter) {
+    throw new Error(`Could not find formatter ${request.formatterName}`);
+  }
+  return JSON.stringify(
+    formatter(request.results as never[], { formatterName: request.formatterName }),
+  );
+}
+
+globalThis.textlintV8 = { lint, fix, format };
 
 declare global {
   // eslint-disable-next-line no-var
-  var textlintV8: { lint(requestJson: string): Promise<string> };
+  var textlintV8: {
+    lint(requestJson: string): Promise<string>;
+    fix(requestJson: string): Promise<string>;
+    format(requestJson: string): Promise<string>;
+  };
 }
