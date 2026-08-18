@@ -4,16 +4,7 @@ Rust から V8 上の textlint を呼び出す、組み込み用ハーネスで�
 
 V8はJITを使用するため、実行環境で実行可能メモリの割り当てが許可されている必要があります。`v8` crateのビルド済み静的ライブラリはビルド時に取得され、リリースバイナリへリンクされます。
 
-現在は Markdown と次の公開rule ID / preset IDを静的に組み込んでいます。
-
-- `@0x6b/no-emoji`
-- `@0x6b/no-emphasis`
-- `@0x6b/no-hr-before-heading`
-- `@0x6b/no-numbered-headings-and-bullets`
-- `@0x6b/no-smart-quotes`
-- `@0x6b/normalize-whitespaces`
-- `@textlint-ja/preset-ai-writing`
-- `preset-ja-technical-writing`
+現在は Markdown と [`textlint-v8.config.json`](./textlint-v8.config.json) の公開rule ID / preset IDを静的に組み込んでいます。
 
 ## CLI
 
@@ -98,6 +89,8 @@ TEXTLINT_V8_CONFIG=config/strict.json cargo build --release
 3. lockfileを安全に更新するため、`TEXTLINT_V8_UPDATE_LOCKFILE=1 cargo build` を一度実行します。これは外部pnpm CLIではなく、build scriptが使用するpnpm Rust APIで `pnpm-lock.yaml` を更新します。その後、環境変数なしの通常ビルドがfrozen lockfileで成功することを確認します。
 4. packageがNode APIを要求する場合に限り、既存の `js/*-shim.*` とRolldown alias、または限定的なRolldown plugin変換を追加します。形態素解析を使うruleでは、既存のKuromoji辞書loaderとRust bridgeで足りるか確認します。
 5. 下記を実行し、診断のrule IDと生成bundleを確認します。
+
+有効なpresetが同じruleを子ruleとして含む場合は、preset側の子ruleを `false` にします。textlint kernelは同じrule実装と設定の組み合わせを重複排除するため、両方を有効にすると先に登録されたrule IDだけが診断に使われます。たとえば [`@textlint-rule/no-invalid-control-character`](https://github.com/textlint-rule/textlint-rule-no-invalid-control-character) は `preset-ja-technical-writing` にも含まれるため、このリポジトリの設定ではpreset側を無効にしています。
 
 ```console
 cargo fmt --all -- --check

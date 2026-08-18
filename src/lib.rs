@@ -311,7 +311,7 @@ mod tests {
         let mut textlint = Textlint::new().unwrap();
         let result = textlint
             .lint(
-                "# 1. “見出し” 😀\n\n*強調*\n\n---\n\n## 次\n\n1. 箇条書き\n\n特殊　空白\n\n革命的な技術です。\n\nこれは見ることができないわけではない。\n",
+                "# 1. “見出し” 😀\n\n*強調*\n\n---\n\n## 次\n\n1. 箇条書き\n\n特殊　空白\n\n無効な制御文字\u{b}\n\n革命的な技術です。\n\nこれは見ることができないわけではない。\n",
                 "sample.md",
             )
             .unwrap();
@@ -328,6 +328,7 @@ mod tests {
         assert!(ids.contains(&"@0x6b/no-smart-quotes"));
         assert!(ids.contains(&"@0x6b/normalize-whitespaces"));
         assert!(ids.contains(&"@textlint-ja/ai-writing/no-ai-hype-expressions"));
+        assert!(ids.contains(&"@textlint-rule/no-invalid-control-character"));
         assert!(ids.contains(&"ja-technical-writing/no-double-negative-ja"));
 
         let second_result = textlint

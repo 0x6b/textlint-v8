@@ -29,6 +29,9 @@ importers:
       '@textlint-ja/textlint-rule-preset-ai-writing':
         specifier: 1.7.0
         version: 1.7.0
+      '@textlint-rule/textlint-rule-no-invalid-control-character':
+        specifier: 3.0.0
+        version: 3.0.0
       '@textlint/kernel':
         specifier: 15.5.2
         version: 15.5.2

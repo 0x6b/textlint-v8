@@ -7,6 +7,9 @@
     "@0x6b/no-smart-quotes": true,
     "@0x6b/normalize-whitespaces": true,
     "@textlint-ja/preset-ai-writing": true,
-    "preset-ja-technical-writing": true
+    "@textlint-rule/no-invalid-control-character": true,
+    "preset-ja-technical-writing": {
+      "no-invalid-control-character": false
+    }
   }
 }
