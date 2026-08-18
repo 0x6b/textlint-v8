@@ -55,8 +55,6 @@ for message in result.messages {
 
 pnpm 12は現時点でRust crateをcrates.ioへ公開していないため、PoCでは `pnpm/pnpm` のcommitをGit依存として固定しています。公開crateになっているRolldownも、生成結果の再現性のためバージョンを固定しています。
 
-比較・切り戻し用の従来のesbuild経路も `npm run build` として残しています。
-
 ルール設定は `textlint-v8.config.json` に記述します。通常の textlint と同様に、値には `true`、`false`、またはルール固有のオプションオブジェクトを指定できます。設定にないルールは無効です。このファイルもJavaScript bundleへ埋め込まれるため、実行時には必要ありません。
 
 ```json
