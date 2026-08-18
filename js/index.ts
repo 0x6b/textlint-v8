@@ -37,21 +37,27 @@ const configuredRules = standaloneRules.map((definition) => ({
   options: __TEXTLINT_V8_CONFIG__.rules[definition.ruleId] ?? false,
 }));
 
+function resolvePresetRuleOptions(
+  presetOptions: RuleOptions | undefined,
+  override: RuleOptions | undefined,
+  fallback: RuleOptions | undefined,
+): RuleOptions {
+  if (!presetOptions || override === false) return false;
+  if (override === undefined || override === true) return fallback ?? true;
+  return override;
+}
+
 for (const { presetId, ruleIdPrefix, preset: untypedPreset } of presetDefinitions) {
   const preset = untypedPreset as Preset;
   const presetOptions = __TEXTLINT_V8_CONFIG__.rules[presetId];
   const childOverrides =
     presetOptions && typeof presetOptions === "object" ? presetOptions : undefined;
   for (const [ruleKey, rule] of Object.entries(preset.rules)) {
-    const override = childOverrides?.[ruleKey];
-    const options =
-      presetOptions === false || presetOptions === undefined
-        ? false
-        : override === false
-          ? false
-          : override !== undefined && override !== true
-            ? override
-            : (preset.rulesConfig[ruleKey] ?? true);
+    const options = resolvePresetRuleOptions(
+      presetOptions,
+      childOverrides?.[ruleKey],
+      preset.rulesConfig[ruleKey],
+    );
     configuredRules.push({ ruleId: `${ruleIdPrefix}/${ruleKey}`, rule, options });
   }
 }
