@@ -1,20 +1,24 @@
 use std::{
-    env::args_os,
     fs::read_to_string,
     io::{Read as _, Write as _, stdin, stdout},
+    path::PathBuf,
 };
 
 use anyhow::{Context as _, Result};
-use serde_json::to_string_pretty;
+use clap::Parser;
+use serde_json::to_writer_pretty;
 use textlint_v8::{Textlint, third_party_notices};
 
+#[derive(Parser)]
+struct Args {
+    #[arg(long, alias = "third-party-licenses", conflicts_with = "paths")]
+    licenses: bool,
+    paths: Vec<PathBuf>,
+}
+
 fn main() -> Result<()> {
-    let paths: Vec<_> = args_os().skip(1).collect();
-    if paths.len() == 1
-        && paths[0]
-            .to_str()
-            .is_some_and(|arg| matches!(arg, "--licenses" | "--third-party-licenses"))
-    {
+    let Args { licenses, paths } = Args::parse();
+    if licenses {
         stdout().write_all(third_party_notices().as_bytes())?;
         return Ok(());
     }
@@ -30,16 +34,17 @@ fn main() -> Result<()> {
             .map(|path| -> Result<_> {
                 let text = read_to_string(&path)
                     .with_context(|| format!("failed to read {}", path.to_string_lossy()))?;
-                let file_path = path.to_string_lossy().into_owned();
-                Ok(textlint.lint(&text, &file_path)?)
+                Ok(textlint.lint(&text, &path.to_string_lossy())?)
             })
             .collect::<Result<Vec<_>>>()?
     };
 
+    let mut stdout = stdout().lock();
     if let [result] = results.as_slice() {
-        println!("{}", to_string_pretty(result)?);
+        to_writer_pretty(&mut stdout, result)?;
     } else {
-        println!("{}", to_string_pretty(&results)?);
+        to_writer_pretty(&mut stdout, &results)?;
     }
+    writeln!(stdout)?;
     Ok(())
 }

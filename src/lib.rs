@@ -91,36 +91,28 @@ struct V8State {
     isolate: OwnedIsolate,
 }
 
+macro_rules! dictionary {
+    ($filename:literal) => {
+        include_bytes!(concat!(env!("OUT_DIR"), "/kuromoji/", $filename))
+    };
+}
+
 fn compressed_dictionary(filename: &str) -> Option<&'static [u8]> {
-    Some(match filename {
-        "base.dat.gz" => include_bytes!(concat!(env!("OUT_DIR"), "/kuromoji/base.dat.gz")),
-        "check.dat.gz" => include_bytes!(concat!(env!("OUT_DIR"), "/kuromoji/check.dat.gz")),
-        "tid.dat.gz" => include_bytes!(concat!(env!("OUT_DIR"), "/kuromoji/tid.dat.gz")),
-        "tid_pos.dat.gz" => {
-            include_bytes!(concat!(env!("OUT_DIR"), "/kuromoji/tid_pos.dat.gz"))
-        }
-        "tid_map.dat.gz" => {
-            include_bytes!(concat!(env!("OUT_DIR"), "/kuromoji/tid_map.dat.gz"))
-        }
-        "cc.dat.gz" => include_bytes!(concat!(env!("OUT_DIR"), "/kuromoji/cc.dat.gz")),
-        "unk.dat.gz" => include_bytes!(concat!(env!("OUT_DIR"), "/kuromoji/unk.dat.gz")),
-        "unk_pos.dat.gz" => {
-            include_bytes!(concat!(env!("OUT_DIR"), "/kuromoji/unk_pos.dat.gz"))
-        }
-        "unk_map.dat.gz" => {
-            include_bytes!(concat!(env!("OUT_DIR"), "/kuromoji/unk_map.dat.gz"))
-        }
-        "unk_char.dat.gz" => {
-            include_bytes!(concat!(env!("OUT_DIR"), "/kuromoji/unk_char.dat.gz"))
-        }
-        "unk_compat.dat.gz" => {
-            include_bytes!(concat!(env!("OUT_DIR"), "/kuromoji/unk_compat.dat.gz"))
-        }
-        "unk_invoke.dat.gz" => {
-            include_bytes!(concat!(env!("OUT_DIR"), "/kuromoji/unk_invoke.dat.gz"))
-        }
-        _ => return None,
-    })
+    match filename {
+        "base.dat.gz" => Some(dictionary!("base.dat.gz")),
+        "check.dat.gz" => Some(dictionary!("check.dat.gz")),
+        "tid.dat.gz" => Some(dictionary!("tid.dat.gz")),
+        "tid_pos.dat.gz" => Some(dictionary!("tid_pos.dat.gz")),
+        "tid_map.dat.gz" => Some(dictionary!("tid_map.dat.gz")),
+        "cc.dat.gz" => Some(dictionary!("cc.dat.gz")),
+        "unk.dat.gz" => Some(dictionary!("unk.dat.gz")),
+        "unk_pos.dat.gz" => Some(dictionary!("unk_pos.dat.gz")),
+        "unk_map.dat.gz" => Some(dictionary!("unk_map.dat.gz")),
+        "unk_char.dat.gz" => Some(dictionary!("unk_char.dat.gz")),
+        "unk_compat.dat.gz" => Some(dictionary!("unk_compat.dat.gz")),
+        "unk_invoke.dat.gz" => Some(dictionary!("unk_invoke.dat.gz")),
+        _ => None,
+    }
 }
 
 fn throw_error(scope: &mut PinScope, message: &str) {
