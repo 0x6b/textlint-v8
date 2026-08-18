@@ -286,17 +286,10 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| root.join("textlint-v8.config.json"));
 
     println!("cargo:rerun-if-env-changed=TEXTLINT_V8_CONFIG");
-    for path in [
-        "package.json",
-        "pnpm-lock.yaml",
-        "js",
-        "textlint-v8.config.json",
-    ] {
+    for path in ["package.json", "pnpm-lock.yaml", "js"] {
         println!("cargo:rerun-if-changed={path}");
     }
-    if !config_path.starts_with(&root) {
-        println!("cargo:rerun-if-changed={}", config_path.display());
-    }
+    println!("cargo:rerun-if-changed={}", config_path.display());
 
     let config: Value = serde_json::from_slice(
         &fs::read(&config_path)
