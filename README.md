@@ -72,15 +72,15 @@ println!("{}", third_party_notices());
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-`Textlint` は bundle を一度だけ評価します。同じインスタンスを再利用すると、文書ごとにV8を初期化する必要がありません。`fix`は修正後の本文、適用した診断、残った診断を返します。`format_lint_results`と`format_fix_results`ではCLIと同じformatterを利用できます。V8 isolateのスレッド制約を型で表すため、`Textlint` は `Send` / `Sync` ではなく、各操作は `&mut self` を要求します。公開APIは `textlint_v8::Error` を返し、request serialization、V8操作、JavaScript例外、pending Promise、不正なresponseを判別できます。JavaScript例外ではmessageと取得可能なstackを保持します。
+`Textlint` は bundle を一度だけ評価します。同じインスタンスを再利用すると、文書ごとにV8を初期化する必要がありません。`fix`は修正後の本文、適用した診断、残った診断を返します。`format_lint_results`と`format_fix_results`ではCLIと同じformatterを利用できます。V8 isolateのスレッド制約を型で表すため、`Textlint` は `Send` / `Sync` ではありません。各操作は `&mut self` を要求します。公開APIは `textlint_v8::Error` を返します。このエラーからrequest serialization、V8操作、JavaScript例外、pending Promise、不正なresponseを判別できます。JavaScript例外ではmessageと取得可能なstackを保持します。
 
-`third_party_notices()` は、このbuildの最終成果物に含まれるRust/V8依存、Rolldownが実際にbundleへ出力したnpm package、およびKuromoji辞書のライセンスとNOTICEを返します。CLIでは `--licenses`（`--third-party-licenses` も可）で同じ内容を表示します。npm部分は固定lockfileからbuild時に生成し、生成済みNOTICE自体はcommitしません。buildにのみ使うpnpm/RolldownのRust crateは配布バイナリの表示対象に含めません。
+`third_party_notices()` は、このbuildの最終成果物に含まれる依存物のライセンスとNOTICEを返します。対象はRust/V8依存、Rolldownが実際にbundleへ出力したnpm package、およびKuromoji辞書です。CLIでは `--licenses`（`--third-party-licenses` も可）で同じ内容を表示します。npm部分は固定lockfileからbuild時に生成し、生成済みNOTICE自体はcommitしません。buildにのみ使うpnpm/RolldownのRust crateは配布バイナリの表示対象に含めません。
 
 `textlint-rule-no-doubled-conjunctive-particle-ga`は、文ごとにKuromojiキャッシュを迂回する実装になっています。bundle生成時に同じ`kuromojin.tokenize()`キャッシュを使うよう限定的に書き換え、依存パッケージの実装が変わってパッチできなくなった場合はビルドを失敗させます。
 
 ## JavaScript bundle の生成
 
-`build.rs` がpnpm 12のRust実装をライブラリとして呼び出してnpm依存を取得し、RolldownのRust APIでCargoの `OUT_DIR/textlint-v8.js` を生成します。npm workspace、`node_modules`、pnpm store、生成registry、bundle、辞書コピー、第三者NOTICEはすべて `OUT_DIR` 内で完結し、consumerと依存crateのソースディレクトリへ書き込みません。外部のpnpm CLIやNode.jsプロセスは起動しません。依存パッケージのlifecycle scriptも無効です。生成済みbundleとNOTICEはRustバイナリへ `include_str!` で埋め込まれます。
+`build.rs` がpnpm 12のRust実装をライブラリとして呼び出してnpm依存を取得します。その後、RolldownのRust APIでCargoの `OUT_DIR/textlint-v8.js` を生成します。npm workspace、`node_modules`、pnpm store、生成registry、bundle、辞書コピー、第三者NOTICEはすべて `OUT_DIR` 内で完結します。consumerと依存crateのソースディレクトリへは書き込みません。外部のpnpm CLIやNode.jsプロセスは起動しません。依存パッケージのlifecycle scriptも無効です。生成済みbundleとNOTICEはRustバイナリへ `include_str!` で埋め込まれます。
 
 pnpm 12は現時点でRust crateをcrates.ioへ公開していないため、PoCでは `pnpm/pnpm` のcommitをGit依存として固定しています。公開crateになっているRolldownも、生成結果の再現性のためバージョンを固定しています。
 
@@ -118,13 +118,13 @@ TEXTLINT_V8_CONFIG=config/strict.json cargo build --release
 
 ## ルールを追加する
 
-1. 単体ruleまたはpresetの公開IDを `textlint-v8.config.json` の `rules` に追加します。presetは名前を `preset-` で始め、値にはpreset全体の設定を指定します。
-2. 上表から導出されるnpm packageを、固定versionで `package.json` の `dependencies` に追加します。
-3. lockfileを安全に更新するため、`TEXTLINT_V8_UPDATE_LOCKFILE=1 cargo build` を一度実行します。これは外部pnpm CLIではなく、build scriptが使用するpnpm Rust APIで `pnpm-lock.yaml` を更新します。その後、環境変数なしの通常ビルドがfrozen lockfileで成功することを確認します。
-4. packageがNode APIを要求する場合に限り、既存の `js/shim/` とRolldown alias、または限定的なRolldown plugin変換を追加します。形態素解析を使うruleでは、既存のKuromoji辞書loaderとRust bridgeで足りるか確認します。
-5. 下記を実行し、診断のrule IDと生成bundleを確認します。
+1. 単体ruleまたはpresetの公開IDを `textlint-v8.config.json` の `rules` に追加する。presetは名前を `preset-` で始め、値にはpreset全体の設定を指定する。
+2. 上表から導出されるnpm packageを、固定versionで `package.json` の `dependencies` に追加する。
+3. lockfileを安全に更新するため、`TEXTLINT_V8_UPDATE_LOCKFILE=1 cargo build` を一度実行する。これは外部pnpm CLIではなく、build scriptが使用するpnpm Rust APIで `pnpm-lock.yaml` を更新する。その後、環境変数なしの通常ビルドがfrozen lockfileで成功することを確認する。
+4. packageがNode APIを要求する場合に限り、既存の `js/shim/` とRolldown alias、または限定的なRolldown plugin変換を追加する。形態素解析を使うruleでは、既存のKuromoji辞書loaderとRust bridgeで足りるか確認する。
+5. 下記を実行し、診断のrule IDと生成bundleを確認する。
 
-有効なpresetが同じruleを子ruleとして含む場合は、preset側の子ruleを `false` にします。textlint kernelは同じrule実装と設定の組み合わせを重複排除するため、両方を有効にすると先に登録されたrule IDだけが診断に使われます。たとえば [`@textlint-rule/no-invalid-control-character`](https://github.com/textlint-rule/textlint-rule-no-invalid-control-character) は `preset-ja-technical-writing` にも含まれるため、このリポジトリの設定ではpreset側を無効にしています。
+有効なpresetが同じruleを子ruleとして含む場合は、preset側の子ruleを `false` にします。textlint kernelは、同じrule実装と設定の組み合わせを重複排除します。そのため、両方を有効にすると先に登録されたrule IDだけが診断に使われます。たとえば [`@textlint-rule/no-invalid-control-character`](https://github.com/textlint-rule/textlint-rule-no-invalid-control-character) は `preset-ja-technical-writing` にも含まれます。このリポジトリの設定ではpreset側を無効にしています。
 
 ```console
 cargo fmt --all -- --check
