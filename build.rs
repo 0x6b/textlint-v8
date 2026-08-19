@@ -725,8 +725,7 @@ fn main() -> Result<()> {
     let out_dir = var_os("OUT_DIR")
         .map(PathBuf::from)
         .context("OUT_DIR is not set")?;
-    let config_path = var_os("TEXTLINT_V8_CONFIG")
-        .map_or_else(|| root.join("textlint-v8.config.json"), PathBuf::from);
+    let config_path = root.join("textlint-v8.config.json");
     let update_lockfile = match var_os("TEXTLINT_V8_UPDATE_LOCKFILE") {
         None => false,
         Some(value) if value == "1" => true,
@@ -736,7 +735,6 @@ fn main() -> Result<()> {
         ),
     };
 
-    println!("cargo:rerun-if-env-changed=TEXTLINT_V8_CONFIG");
     println!("cargo:rerun-if-env-changed=TEXTLINT_V8_UPDATE_LOCKFILE");
     for path in ["package.json", "pnpm-lock.yaml", "js", "resources"] {
         println!("cargo:rerun-if-changed={path}");

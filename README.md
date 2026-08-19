@@ -90,12 +90,6 @@ As with standard textlint configuration, each value can be `true`, `false`, or a
 
 If an enabled preset includes a rule that is also registered separately, set that child rule to `false` in the preset. When the same implementation is registered twice, diagnostics use only the rule ID registered first.
 
-To embed a different configuration, provide its path at build time:
-
-```console
-TEXTLINT_V8_CONFIG=config/strict.json cargo build --release
-```
-
 ## License
 
 MIT. See [LICENSE](./LICENSE) for details.
