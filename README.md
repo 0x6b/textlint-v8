@@ -1,6 +1,6 @@
 # textlint-v8
 
-An opinionated, embeddable textlint CLI and Rust library built on V8. It produces a standalone binary that requires no Node.js, `node_modules`, or JavaScript files at runtime.
+An opinionated, embeddable textlint CLI and Rust library built on V8. Neither building nor running it requires Node.js or a JavaScript package manager. The resulting standalone binary also requires no `node_modules` or JavaScript files at runtime.
 
 Markdown support and the rules in [`textlint-v8.config.json`](./textlint-v8.config.json) are embedded in the binary.
 
@@ -10,29 +10,29 @@ Markdown support and the rules in [`textlint-v8.config.json`](./textlint-v8.conf
 cargo build --release
 ```
 
-The executable is written to `target/release/textlint-v8`. Building does not require Node.js or the pnpm CLI.
+The executable is written to `target/release/textlint-v8`.
 
 ## Usage
 
 ```console
 # Lint a file
-target/release/textlint-v8 document.md
+textlint-v8 document.md
 
 # Lint multiple files
-target/release/textlint-v8 first.md second.md
+textlint-v8 first.md second.md
 
 # Fix problems automatically
-target/release/textlint-v8 --fix document.md
+textlint-v8 --fix document.md
 
 # Lint or fix standard input
-cat document.md | target/release/textlint-v8
-cat document.md | target/release/textlint-v8 --fix
+cat document.md | textlint-v8
+cat document.md | textlint-v8 --fix
 
 # Select a formatter
-target/release/textlint-v8 --formatter json document.md
+textlint-v8 --formatter json document.md
 
 # Print licenses for embedded dependencies
-target/release/textlint-v8 --licenses
+textlint-v8 --licenses
 ```
 
 Available formatters are `stylish` (default), `compact`, `json`, `checkstyle`, `junit`, and `tap`. With files, `--fix` writes changes back to each file. With standard input, it prints the fixed Markdown to standard output.
