@@ -1,8 +1,8 @@
 # textlint-v8
 
-An opinionated, embeddable textlint CLI and Rust library built on V8. Neither building nor running it requires Node.js or a JavaScript package manager. The resulting standalone binary also requires no `node_modules` or JavaScript files at runtime.
+Opinionated textlint rules compiled into a standalone binary, with no Node.js or JavaScript package manager required to build or run it.
 
-Markdown support and the rules in [`textlint-v8.config.json`](./textlint-v8.config.json) are embedded in the binary.
+It runs textlint for Markdown on V8 and provides both a CLI and Rust API. Rules from [`textlint-v8.config.json`](./textlint-v8.config.json) are embedded in the binary.
 
 ## Build
 
