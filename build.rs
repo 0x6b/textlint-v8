@@ -8,13 +8,21 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use pnpm_config::Config;
-use pnpm_lockfile::{LazyLockfile, Lockfile, MaybeLazyLockfile};
-use pnpm_network::ThrottledClient;
-use pnpm_package_manager::{Install, ProjectMutation, ResolvedPackages, UpdateSeedPolicy};
-use pnpm_package_manifest::{DependencyGroup, PackageManifest};
-use pnpm_reporter::SilentReporter;
-use pnpm_tarball::MemCache;
+use deno_config::deno_json::NodeModulesDirMode;
+use deno_error::JsErrorBox;
+use deno_npm_cache::{
+    DownloadError, NpmCacheHttpClient, NpmCacheHttpClientBytesResponse, NpmCacheHttpClientResponse,
+    NpmCacheSetting,
+};
+use deno_npm_installer::{
+    LifecycleScriptsConfig, LogReporter, NpmInstallerFactory, NpmInstallerFactoryOptions,
+    PackageCaching, graph::NpmCachingStrategy, lifecycle_scripts::NullLifecycleScriptsExecutor,
+};
+use deno_resolver::factory::{
+    ConfigDiscoveryOption, ResolverFactory, ResolverFactoryOptions, WorkspaceFactory,
+    WorkspaceFactoryOptions,
+};
+use reqwest::Client;
 use rolldown::{
     Bundler, BundlerOptions, BundlerTransformOptions, CodeSplittingMode, Either, InputItem,
     OutputFormat, Platform, ResolveOptions,
@@ -27,9 +35,10 @@ use rolldown::{
 use rolldown_common::Output;
 use semver::Version;
 use serde_json::{Value, from_slice, to_string};
+use sys_traits::impls::RealSys;
 use tokio::runtime::Builder;
 
-const PNPM_SOURCE: &str = "pnpm/pnpm@87b9504492d879c05c550def1c8058214ebaac83";
+const DENO_INSTALLER_SOURCE: &str = "deno_npm_installer@0.42.0";
 const REGISTRY_SPECIFIER: &str = "textlint-v8:registry";
 
 #[derive(Debug)]
@@ -49,6 +58,43 @@ struct TextlintBundlePlugin {
 struct BundleOutput {
     bytes: Vec<u8>,
     module_ids: Vec<PathBuf>,
+}
+
+#[derive(Debug)]
+struct HttpClient(Client);
+
+#[async_trait::async_trait(?Send)]
+impl NpmCacheHttpClient for HttpClient {
+    async fn download_with_retries_on_any_tokio_runtime(
+        &self,
+        url: url::Url,
+        _maybe_auth: Option<String>,
+        _maybe_etag: Option<String>,
+        _registry_config: Option<&deno_npmrc::RegistryConfig>,
+    ) -> std::result::Result<NpmCacheHttpClientResponse, DownloadError> {
+        let response = self
+            .0
+            .get(url)
+            .send()
+            .await
+            .and_then(reqwest::Response::error_for_status)
+            .map_err(|error| DownloadError {
+                status_code: error.status().map(|status| status.as_u16()),
+                error: JsErrorBox::generic(error.to_string()),
+            })?;
+        let status = response.status();
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|error| DownloadError {
+                status_code: Some(status.as_u16()),
+                error: JsErrorBox::generic(error.to_string()),
+            })?
+            .to_vec();
+        Ok(NpmCacheHttpClientResponse::Bytes(
+            NpmCacheHttpClientBytesResponse { bytes, etag: None },
+        ))
+    }
 }
 
 impl Plugin for TextlintBundlePlugin {
@@ -231,64 +277,55 @@ fn generate_registry(packages: &[RulePackage], out_dir: &Path) -> Result<PathBuf
 }
 
 async fn install_dependencies(root: &Path, update_lockfile: bool) -> Result<()> {
-    let manifest = PackageManifest::from_path(root.join("package.json"))
-        .context("read package.json for the embedded pnpm installer")?;
-    let modules_dir = root.join("node_modules");
-    let mut config = Config::new();
-    config.store_dir = root.join("pnpm-store").into();
-    config.modules_dir = modules_dir.clone();
-    config.virtual_store_dir = modules_dir.join(".pnpm");
-    config.workspace_dir = Some(root.to_path_buf());
-    config.lockfile = true;
-    config.ignore_scripts = true;
-    let config = config.leak();
-    let lockfile = LazyLockfile::deferred(root.to_path_buf());
-    let lockfile_path = root.join(Lockfile::FILE_NAME);
-    let http_client = Arc::new(ThrottledClient::default());
-    let resolved_packages = ResolvedPackages::new();
-
-    Install {
-        tarball_mem_cache: Arc::new(MemCache::new()),
-        resolved_packages: &resolved_packages,
-        http_client: &http_client,
-        http_client_arc: Arc::clone(&http_client),
-        config,
-        manifest: &manifest,
-        emit_initial_manifest: true,
-        lockfile: MaybeLazyLockfile::Lazy(&lockfile),
-        lockfile_path: Some(&lockfile_path),
-        dependency_groups: [
-            DependencyGroup::Prod,
-            DependencyGroup::Dev,
-            DependencyGroup::Optional,
-        ],
-        frozen_lockfile: !update_lockfile,
-        prefer_frozen_lockfile: None,
-        ignore_manifest_check: false,
-        skip_runtimes: false,
-        trust_lockfile: false,
-        update_checksums: false,
-        mutation: ProjectMutation::InstallWorkspace,
-        installs_only: true,
-        supported_architectures: None,
-        node_linker: config.node_linker,
-        lockfile_only: false,
-        dry_run: false,
-        persist_policy_excludes: false,
-        update_seed_policy: UpdateSeedPolicy::KeepAll,
-        preferred_versions_override: None,
-        auth_override: None,
-        resolution_observer: None,
-        peer_issues_sink: None,
-        deps_requiring_build_sink: None,
-        catalogs_override: None,
-        disable_optimistic_repeat_install: false,
-        pnpmfile_hook_override: None,
-        workspace_projects_override: None,
-    }
-    .run::<SilentReporter>()
-    .await
-    .context("install npm dependencies through the pnpm Rust library")?;
+    let deno_dir = root
+        .parent()
+        .context("build workspace has no parent directory")?
+        .join("textlint-v8-deno-dir");
+    let workspace_factory = Arc::new(WorkspaceFactory::new(
+        RealSys,
+        root.to_path_buf(),
+        WorkspaceFactoryOptions {
+            config_discovery: ConfigDiscoveryOption::Disabled,
+            is_package_manager_subcommand: true,
+            frozen_lockfile: Some(!update_lockfile),
+            lock_arg: Some(root.join("deno.lock")),
+            maybe_custom_deno_dir_root: Some(deno_dir),
+            node_modules_dir: Some(NodeModulesDirMode::Auto),
+            ..Default::default()
+        },
+    ));
+    let resolver_factory = Arc::new(ResolverFactory::new(
+        workspace_factory,
+        ResolverFactoryOptions::default(),
+    ));
+    let factory = NpmInstallerFactory::new(
+        resolver_factory,
+        Arc::new(HttpClient(Client::new())),
+        Arc::new(NullLifecycleScriptsExecutor),
+        LogReporter,
+        None,
+        NpmInstallerFactoryOptions {
+            cache_setting: NpmCacheSetting::Use,
+            caching_strategy: NpmCachingStrategy::Eager,
+            clean_on_install: true,
+            lifecycle_scripts_config: LifecycleScriptsConfig {
+                initial_cwd: root.to_path_buf(),
+                root_dir: root.to_path_buf(),
+                explicit_install: true,
+                ..Default::default()
+            },
+            resolve_npm_resolution_snapshot: Box::new(|| Ok(None)),
+        },
+    );
+    let installer = factory.npm_installer().await?;
+    installer.ensure_no_pkg_json_dep_errors()?;
+    installer.ensure_top_level_package_json_install().await?;
+    installer.cache_packages(PackageCaching::All).await?;
+    factory
+        .maybe_lockfile()
+        .await?
+        .context("Deno did not open deno.lock")?
+        .write_if_changed()?;
 
     Ok(())
 }
@@ -320,7 +357,7 @@ fn prepare_workspace(source_root: &Path, out_dir: &Path) -> Result<PathBuf> {
         remove_dir_all(&workspace).with_context(|| format!("remove {}", workspace.display()))?;
     }
     create_dir_all(&workspace).with_context(|| format!("create {}", workspace.display()))?;
-    for filename in ["package.json", "pnpm-lock.yaml"] {
+    for filename in ["package.json", "deno.lock"] {
         copy(source_root.join(filename), workspace.join(filename))
             .with_context(|| format!("copy {filename} into the build workspace"))?;
     }
@@ -428,7 +465,7 @@ fn generate_notices(
     module_ids: &[PathBuf],
 ) -> Result<()> {
     let mut manifests = Vec::new();
-    find_package_manifests(&root.join("node_modules/.pnpm"), &mut manifests)?;
+    find_package_manifests(&root.join("node_modules/.deno"), &mut manifests)?;
     let mut packages = BTreeMap::new();
     for manifest_path in manifests {
         let manifest: Value = from_slice(
@@ -494,7 +531,7 @@ fn generate_notices(
     for module_id in module_ids {
         if module_id
             .components()
-            .any(|component| component.as_os_str() == ".pnpm")
+            .any(|component| component.as_os_str() == ".deno")
             && !packages.values().any(|(_, package_dir, _)| {
                 module_id.starts_with(package_dir)
                     || canonicalize(package_dir)
@@ -736,10 +773,15 @@ fn main() -> Result<()> {
     };
 
     println!("cargo:rerun-if-env-changed=TEXTLINT_V8_UPDATE_LOCKFILE");
-    for path in ["package.json", "pnpm-lock.yaml", "js", "resources"] {
+    for path in [
+        "package.json",
+        "deno.lock",
+        "textlint-v8.config.json",
+        "js",
+        "resources",
+    ] {
         println!("cargo:rerun-if-changed={path}");
     }
-    println!("cargo:rerun-if-changed={}", config_path.display());
 
     let config: Value = from_slice(
         &read(&config_path)
@@ -754,7 +796,7 @@ fn main() -> Result<()> {
     let workspace = prepare_workspace(&root, &out_dir)?;
     let registry_path = generate_registry(&packages, &workspace)?;
 
-    let runtime = Builder::new_multi_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .context("create build runtime")?;
@@ -764,20 +806,13 @@ fn main() -> Result<()> {
     })?;
 
     if update_lockfile {
-        copy(
-            workspace.join("pnpm-lock.yaml"),
-            root.join("pnpm-lock.yaml"),
-        )
-        .context("copy explicitly updated pnpm lockfile to the source tree")?;
+        copy(workspace.join("deno.lock"), root.join("deno.lock"))
+            .context("copy explicitly updated Deno lockfile to the source tree")?;
     }
     copy_dictionaries(&workspace, &out_dir)?;
     generate_notices(&workspace, &root, &out_dir, &bundle.module_ids)?;
     let output = out_dir.join("textlint-v8.js");
     write(&output, bundle.bytes).with_context(|| format!("write {}", output.display()))?;
-    println!("cargo:warning=npm dependencies installed with {PNPM_SOURCE}");
-    println!(
-        "cargo:warning=embedded textlint config: {}",
-        config_path.display()
-    );
+    println!("cargo:warning=npm dependencies installed with {DENO_INSTALLER_SOURCE}");
     Ok(())
 }

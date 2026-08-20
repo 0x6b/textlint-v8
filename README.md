@@ -7,7 +7,7 @@ It runs textlint for Markdown on V8 and provides both a CLI and Rust API. Rules 
 ## Build
 
 ```console
-cargo build --release
+cargo build --release --features cli
 ```
 
 The executable is written to `target/release/textlint-v8`.
