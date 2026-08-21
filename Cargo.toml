@@ -19,18 +19,18 @@ v8 = "=152.1.0"
 [build-dependencies]
 anyhow = "1.0.104"
 async-trait = "0.1"
-deno_config = { version = "=0.97.0", default-features = false }
-deno_error = "=0.7.1"
-deno_npm_cache = "=0.66.0"
-deno_npm_installer = "=0.42.0"
-deno_npmrc = "=0.8.0"
-deno_resolver = "=0.78.0"
+deno_config = { version = "0.107.0", default-features = false }
+deno_error = "0.7.1"
+deno_npm_cache = "0.76.0"
+deno_npm_installer = "0.52.0"
+deno_npmrc = "0.18.0"
+deno_resolver = "0.88.0"
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
-rolldown = { version = "=1.2.4", default-features = false }
-rolldown_common = { version = "=1.2.4", default-features = false }
+rolldown = { version = "=1.2.5", default-features = false }
+rolldown_common = { version = "=1.2.5", default-features = false }
 semver = "1"
 serde_json = "1.0.151"
-sys_traits = "=0.1.27"
+sys_traits = "0.1.28"
 tokio = { version = "1", features = ["rt"] }
 url = "2"
 

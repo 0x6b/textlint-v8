@@ -38,7 +38,7 @@ use serde_json::{Value, from_slice, to_string};
 use sys_traits::impls::RealSys;
 use tokio::runtime::Builder;
 
-const DENO_INSTALLER_SOURCE: &str = "deno_npm_installer@0.42.0";
+const DENO_INSTALLER_SOURCE: &str = "deno_npm_installer@0.52.0";
 const REGISTRY_SPECIFIER: &str = "textlint-v8:registry";
 
 #[derive(Debug)]
@@ -308,13 +308,16 @@ async fn install_dependencies(root: &Path, update_lockfile: bool) -> Result<()> 
             cache_setting: NpmCacheSetting::Use,
             caching_strategy: NpmCachingStrategy::Eager,
             clean_on_install: true,
+            dedup_lockfile_peer_variants: true,
             lifecycle_scripts_config: LifecycleScriptsConfig {
                 initial_cwd: root.to_path_buf(),
                 root_dir: root.to_path_buf(),
                 explicit_install: true,
                 ..Default::default()
             },
+            production: false,
             resolve_npm_resolution_snapshot: Box::new(|| Ok(None)),
+            skip_types: false,
         },
     );
     let installer = factory.npm_installer().await?;
