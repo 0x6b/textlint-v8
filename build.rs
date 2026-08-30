@@ -38,7 +38,7 @@ use serde_json::{Value, from_slice, to_string};
 use sys_traits::impls::RealSys;
 use tokio::runtime::Builder;
 
-const DENO_INSTALLER_SOURCE: &str = "deno_npm_installer@0.52.0";
+const DENO_INSTALLER_SOURCE: &str = "deno_npm_installer@0.53.0";
 const REGISTRY_SPECIFIER: &str = "textlint-v8:registry";
 
 #[derive(Debug)]
@@ -674,6 +674,8 @@ async fn bundle(root: &Path, config: &Value, registry_path: &Path) -> Result<Bun
         ("node:os", "js/shim/os.ts"),
         ("fs", "js/shim/fs.ts"),
         ("node:fs", "js/shim/fs.ts"),
+        ("util", "js/shim/util.ts"),
+        ("node:util", "js/shim/util.ts"),
     ]
     .into_iter()
     .map(|(name, path)| (name.to_string(), vec![Some(absolute(path))]))

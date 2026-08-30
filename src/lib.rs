@@ -517,7 +517,7 @@ mod tests {
     fn embeds_third_party_notices() {
         let notices = third_party_notices();
         assert!(notices.contains("kuromoji 0.1.2"));
-        assert!(notices.contains("@textlint/kernel 15.5.2"));
+        assert!(notices.contains("@textlint/kernel 15.8.0"));
         assert!(notices.contains("mecab-ipadic-2.7.0-20070801"));
     }
 }

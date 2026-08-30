@@ -49,7 +49,7 @@ thiserror-impl 2.0.20
 timezone_provider 0.2.6
 tinystr 0.8.4
 unicode-ident 1.0.24
-v8 152.1.0
+v8 152.2.0
 writeable 0.6.4
 yoke 0.8.3
 yoke-derive 0.8.2

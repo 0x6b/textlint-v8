@@ -9,10 +9,10 @@
     "@0x6b/textlint-rule-no-smart-quotes": "0.1.0",
     "@0x6b/textlint-rule-normalize-whitespaces": "1.2.1",
     "@textlint-ja/textlint-rule-preset-ai-writing": "1.7.0",
-    "@textlint/linter-formatter": "15.5.2",
+    "@textlint/linter-formatter": "15.8.0",
     "@textlint-rule/textlint-rule-no-invalid-control-character": "3.0.0",
-    "@textlint/kernel": "15.5.2",
-    "@textlint/textlint-plugin-markdown": "15.5.2",
+    "@textlint/kernel": "15.8.0",
+    "@textlint/textlint-plugin-markdown": "15.8.0",
     "textlint-rule-preset-ja-technical-writing": "12.0.2"
   },
   "devDependencies": {
