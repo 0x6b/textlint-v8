@@ -1,3 +1,5 @@
+use std::result;
+
 use thiserror::Error;
 
 /// Errors returned by the public textlint API.
@@ -39,4 +41,4 @@ pub enum Error {
 }
 
 /// A result returned by this crate's textlint operations.
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = result::Result<T, Error>;

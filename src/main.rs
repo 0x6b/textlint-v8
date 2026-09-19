@@ -25,12 +25,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    let Args {
-        licenses,
-        fix,
-        formatter,
-        paths,
-    } = Args::parse();
+    let Args { licenses, fix, formatter, paths } = Args::parse();
     if licenses {
         stdout().write_all(third_party_notices().as_bytes())?;
         return Ok(());
@@ -44,11 +39,7 @@ fn main() -> Result<()> {
             stdout().write_all(textlint.fix(&text, "stdin.md")?.output.as_bytes())?;
         } else {
             let results = [textlint.lint(&text, "stdin.md")?];
-            writeln!(
-                stdout(),
-                "{}",
-                textlint.format_lint_results(&results, &formatter)?
-            )?;
+            writeln!(stdout(), "{}", textlint.format_lint_results(&results, &formatter)?)?;
         }
         return Ok(());
     }
@@ -66,11 +57,7 @@ fn main() -> Result<()> {
             write(&result.file_path, &result.output)
                 .with_context(|| format!("failed to write {}", result.file_path))?;
         }
-        writeln!(
-            stdout(),
-            "{}",
-            textlint.format_fix_results(&results, &formatter)?
-        )?;
+        writeln!(stdout(), "{}", textlint.format_fix_results(&results, &formatter)?)?;
     } else {
         let results = paths
             .into_iter()
@@ -80,11 +67,7 @@ fn main() -> Result<()> {
                 Ok(textlint.lint(&text, &path.to_string_lossy())?)
             })
             .collect::<Result<Vec<_>>>()?;
-        writeln!(
-            stdout(),
-            "{}",
-            textlint.format_lint_results(&results, &formatter)?
-        )?;
+        writeln!(stdout(), "{}", textlint.format_lint_results(&results, &formatter)?)?;
     }
 
     Ok(())

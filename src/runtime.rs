@@ -7,10 +7,15 @@ use v8::{
     ArrayBuffer, Context, ContextScope, CreateParams, Exception, Function,
     FunctionCallbackArguments, Global, Isolate, Local, MicrotasksPolicy, Object, OwnedIsolate,
     PinScope, Promise, PromiseState, ReturnValue, Script, V8, Value, new_default_platform,
+    tc_scope,
 };
 
 use crate::{
-    error::{Error, Result},
+    error::{
+        Error,
+        Error::{InvalidResponse, JavaScript},
+        Result,
+    },
     types::{FixResult, LintResult},
 };
 
@@ -86,6 +91,10 @@ fn throw_error(scope: &mut PinScope, message: &str) {
     scope.throw_exception(error);
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "V8's function callback API requires these wrapper arguments by value"
+)]
 fn load_dictionary(
     scope: &mut PinScope,
     args: FunctionCallbackArguments,
@@ -116,9 +125,10 @@ fn v8_error(
 ) -> Error {
     Error::V8 {
         operation,
-        message: exception
-            .map(|value| value.to_rust_string_lossy(scope))
-            .unwrap_or_else(|| "V8 returned no exception details".to_owned()),
+        message: exception.map_or_else(
+            || "V8 returned no exception details".to_owned(),
+            |value| value.to_rust_string_lossy(scope),
+        ),
         stack: stack.map(|value| value.to_rust_string_lossy(scope)),
     }
 }
@@ -131,11 +141,11 @@ fn javascript_error(scope: &mut PinScope, value: Local<Value>) -> Error {
             .get(scope, name.into())
             .map(|stack| stack.to_rust_string_lossy(scope))
     });
-    Error::JavaScript { message, stack }
+    JavaScript { message, stack }
 }
 
 fn run_script(scope: &mut PinScope, source: &str, operation: &'static str) -> Result<()> {
-    v8::tc_scope!(let scope, scope);
+    tc_scope!(let scope, scope);
     let Some(source) = v8::String::new(scope, source) else {
         let exception = scope.exception();
         let stack = scope.stack_trace();
@@ -202,11 +212,7 @@ impl Textlint {
             }
 
             run_script(scope, V8_PRELUDE, "evaluate the V8 prelude")?;
-            run_script(
-                scope,
-                TEXTLINT_BUNDLE,
-                "evaluate the embedded textlint bundle",
-            )?;
+            run_script(scope, TEXTLINT_BUNDLE, "evaluate the embedded textlint bundle")?;
             Global::new(scope, context)
         };
 
@@ -226,7 +232,7 @@ impl Textlint {
         v8::scope!(let scope, isolate);
         let context = Local::new(scope, &*context);
         let scope = &mut ContextScope::new(scope, context);
-        v8::tc_scope!(let scope, scope);
+        tc_scope!(let scope, scope);
 
         let result = (|| {
             let api_name = v8::String::new(scope, "textlintV8")?;
@@ -260,10 +266,7 @@ impl Textlint {
         }
 
         let output = promise.result(scope).to_rust_string_lossy(scope);
-        from_str(&output).map_err(|source| Error::InvalidResponse {
-            response: output,
-            source,
-        })
+        from_str(&output).map_err(|source| InvalidResponse { response: output, source })
     }
 
     /// Lints a Markdown document.
@@ -308,13 +311,7 @@ impl Textlint {
         results: &[LintResult],
         formatter_name: &str,
     ) -> Result<String> {
-        self.invoke(
-            "format",
-            &FormatRequest {
-                formatter_name,
-                results,
-            },
-        )
+        self.invoke("format", &FormatRequest { formatter_name, results })
     }
 
     /// Formats fix results with one of the embedded textlint formatters.
@@ -331,12 +328,6 @@ impl Textlint {
         results: &[FixResult],
         formatter_name: &str,
     ) -> Result<String> {
-        self.invoke(
-            "format",
-            &FormatRequest {
-                formatter_name,
-                results,
-            },
-        )
+        self.invoke("format", &FormatRequest { formatter_name, results })
     }
 }

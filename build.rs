@@ -2,8 +2,11 @@ use std::{
     borrow::Cow,
     collections::BTreeMap,
     env::var_os,
+    fmt::Write as _,
     fs::{canonicalize, copy, create_dir_all, read, read_dir, remove_dir_all, write},
+    io,
     path::{Path, PathBuf},
+    result,
     sync::Arc,
 };
 
@@ -18,11 +21,12 @@ use deno_npm_installer::{
     LifecycleScriptsConfig, LogReporter, NpmInstallerFactory, NpmInstallerFactoryOptions,
     PackageCaching, graph::NpmCachingStrategy, lifecycle_scripts::NullLifecycleScriptsExecutor,
 };
+use deno_npmrc::RegistryConfig;
 use deno_resolver::factory::{
     ConfigDiscoveryOption, ResolverFactory, ResolverFactoryOptions, WorkspaceFactory,
     WorkspaceFactoryOptions,
 };
-use reqwest::Client;
+use reqwest::{Client, Response};
 use rolldown::{
     Bundler, BundlerOptions, BundlerTransformOptions, CodeSplittingMode, Either, InputItem,
     OutputFormat, Platform, ResolveOptions,
@@ -37,6 +41,7 @@ use semver::Version;
 use serde_json::{Value, from_slice, to_string};
 use sys_traits::impls::RealSys;
 use tokio::runtime::Builder;
+use url::Url;
 
 const DENO_INSTALLER_SOURCE: &str = "deno_npm_installer@0.54.0";
 const REGISTRY_SPECIFIER: &str = "textlint-v8:registry";
@@ -67,17 +72,17 @@ struct HttpClient(Client);
 impl NpmCacheHttpClient for HttpClient {
     async fn download_with_retries_on_any_tokio_runtime(
         &self,
-        url: url::Url,
+        url: Url,
         _maybe_auth: Option<String>,
         _maybe_etag: Option<String>,
-        _registry_config: Option<&deno_npmrc::RegistryConfig>,
-    ) -> std::result::Result<NpmCacheHttpClientResponse, DownloadError> {
+        _registry_config: Option<&RegistryConfig>,
+    ) -> result::Result<NpmCacheHttpClientResponse, DownloadError> {
         let response = self
             .0
             .get(url)
             .send()
             .await
-            .and_then(reqwest::Response::error_for_status)
+            .and_then(Response::error_for_status)
             .map_err(|error| DownloadError {
                 status_code: error.status().map(|status| status.as_u16()),
                 error: JsErrorBox::generic(error.to_string()),
@@ -91,9 +96,7 @@ impl NpmCacheHttpClient for HttpClient {
                 error: JsErrorBox::generic(error.to_string()),
             })?
             .to_vec();
-        Ok(NpmCacheHttpClientResponse::Bytes(
-            NpmCacheHttpClientBytesResponse { bytes, etag: None },
-        ))
+        Ok(NpmCacheHttpClientResponse::Bytes(NpmCacheHttpClientBytesResponse { bytes, etag: None }))
     }
 }
 
@@ -109,20 +112,14 @@ impl Plugin for TextlintBundlePlugin {
     ) -> HookResolveIdReturn {
         if (args.specifier.ends_with("NodeDictionaryLoader")
             || args.specifier.ends_with("NodeDictionaryLoader.js"))
-            && args
-                .importer
-                .is_some_and(|importer| importer.contains("/kuromoji/"))
+            && args.importer.is_some_and(|importer| importer.contains("/kuromoji/"))
         {
-            return Ok(Some(HookResolveIdOutput::from_id(
-                self.dictionary_loader.clone(),
-            )));
+            return Ok(Some(HookResolveIdOutput::from_id(self.dictionary_loader.clone())));
         }
         if args.specifier == "kuromoji/src/loader/DictionaryLoader.js"
             && args.importer == Some(self.dictionary_loader.as_str())
         {
-            return Ok(Some(HookResolveIdOutput::from_id(
-                self.dictionary_base_loader.clone(),
-            )));
+            return Ok(Some(HookResolveIdOutput::from_id(self.dictionary_base_loader.clone())));
         }
         Ok(None)
     }
@@ -203,9 +200,7 @@ fn package_for_rule_id(rule_id: &str) -> Result<(String, Option<String>)> {
 }
 
 fn rule_packages(config: &Value, manifest: &Value) -> Result<Vec<RulePackage>> {
-    let config = config
-        .as_object()
-        .context("textlint config must be an object")?;
+    let config = config.as_object().context("textlint config must be an object")?;
     let rules = config
         .get("rules")
         .and_then(Value::as_object)
@@ -222,22 +217,15 @@ fn rule_packages(config: &Value, manifest: &Value) -> Result<Vec<RulePackage>> {
             bail!("configuration for {rule_id} must be a boolean or object");
         }
         let (package, preset_prefix) = package_for_rule_id(rule_id)?;
-        let version = dependencies
-            .get(&package)
-            .and_then(Value::as_str)
-            .with_context(|| {
-                format!("textlint rule {rule_id} requires package.json dependency {package}")
-            })?;
+        let version = dependencies.get(&package).and_then(Value::as_str).with_context(|| {
+            format!("textlint rule {rule_id} requires package.json dependency {package}")
+        })?;
         Version::parse(version).with_context(|| {
             format!(
                 "textlint rule dependency {package} must use a fixed semantic version, got {version}"
             )
         })?;
-        packages.push(RulePackage {
-            id: rule_id.clone(),
-            package,
-            preset_prefix,
-        });
+        packages.push(RulePackage { id: rule_id.clone(), package, preset_prefix });
     }
     Ok(packages)
 }
@@ -245,28 +233,31 @@ fn rule_packages(config: &Value, manifest: &Value) -> Result<Vec<RulePackage>> {
 fn generate_registry(packages: &[RulePackage], out_dir: &Path) -> Result<PathBuf> {
     let mut source = String::new();
     for (index, rule) in packages.iter().enumerate() {
-        source.push_str(&format!(
-            "import rule{index} from {};\n",
+        writeln!(
+            source,
+            "import rule{index} from {};",
             to_string(&rule.package).context("serialize rule package name")?
-        ));
+        )?;
     }
     source.push_str("\nexport const standaloneRules = [\n");
     for (index, rule) in packages.iter().enumerate() {
         if rule.preset_prefix.is_none() {
-            source.push_str(&format!(
-                "  {{ ruleId: {}, rule: rule{index} }},\n",
+            writeln!(
+                source,
+                "  {{ ruleId: {}, rule: rule{index} }},",
                 to_string(&rule.id).context("serialize rule ID")?
-            ));
+            )?;
         }
     }
     source.push_str("] as const;\n\nexport const presetDefinitions = [\n");
     for (index, rule) in packages.iter().enumerate() {
         if let Some(prefix) = &rule.preset_prefix {
-            source.push_str(&format!(
-                "  {{ presetId: {}, ruleIdPrefix: {}, preset: rule{index} }},\n",
+            writeln!(
+                source,
+                "  {{ presetId: {}, ruleIdPrefix: {}, preset: rule{index} }},",
                 to_string(&rule.id).context("serialize preset ID")?,
                 to_string(prefix).context("serialize preset rule prefix")?
-            ));
+            )?;
         }
     }
     source.push_str("] as const;\n");
@@ -294,10 +285,8 @@ async fn install_dependencies(root: &Path, update_lockfile: bool) -> Result<()> 
             ..Default::default()
         },
     ));
-    let resolver_factory = Arc::new(ResolverFactory::new(
-        workspace_factory,
-        ResolverFactoryOptions::default(),
-    ));
+    let resolver_factory =
+        Arc::new(ResolverFactory::new(workspace_factory, ResolverFactoryOptions::default()));
     let factory = NpmInstallerFactory::new(
         resolver_factory,
         Arc::new(HttpClient(Client::new())),
@@ -439,12 +428,9 @@ fn append_rust_inventory(
             }
             bail!("runtime Rust crate has no license file: {name} {version}");
         }
-        notices.push_str(&format!("\n--- {name} {version} ---\n"));
+        writeln!(notices, "\n--- {name} {version} ---")?;
         for path in license_files {
-            notices.push_str(&format!(
-                "\n[{}]\n",
-                path.file_name().unwrap().to_string_lossy()
-            ));
+            writeln!(notices, "\n[{}]", path.file_name().unwrap().to_string_lossy())?;
             notices.push_str(
                 &String::from_utf8(read(&path)?).with_context(|| {
                     format!("Rust license file is not UTF-8: {}", path.display())
@@ -460,11 +446,7 @@ fn append_rust_inventory(
 
 fn append_rust_notices(notices: &mut String, source_root: &Path) -> Result<()> {
     let cargo_home = var_os("CARGO_HOME").map_or_else(
-        || {
-            var_os("HOME")
-                .map(PathBuf::from)
-                .map(|home| home.join(".cargo"))
-        },
+        || var_os("HOME").map(PathBuf::from).map(|home| home.join(".cargo")),
         |path| Some(PathBuf::from(path)),
     );
     let cargo_home = cargo_home.context("neither CARGO_HOME nor HOME is set")?;
@@ -545,14 +527,16 @@ fn generate_notices(
         });
         let mut attribution = String::new();
         if let Some(author) = author {
-            attribution.push_str(&format!("Author: {author}\n"));
+            writeln!(attribution, "Author: {author}")?;
         }
         if let Some(repository) = repository {
-            attribution.push_str(&format!("Source: {repository}\n"));
+            writeln!(attribution, "Source: {repository}")?;
         }
-        packages
-            .entry((name.to_owned(), version.to_owned()))
-            .or_insert((license.to_owned(), package_dir.to_path_buf(), attribution));
+        packages.entry((name.to_owned(), version.to_owned())).or_insert((
+            license.to_owned(),
+            package_dir.to_path_buf(),
+            attribution,
+        ));
     }
     for module_id in module_ids {
         if module_id
@@ -564,10 +548,7 @@ fn generate_notices(
                         .is_ok_and(|package_dir| module_id.starts_with(package_dir))
             })
         {
-            bail!(
-                "bundled npm module has no package license metadata: {}",
-                module_id.display()
-            );
+            bail!("bundled npm module has no package license metadata: {}", module_id.display());
         }
     }
 
@@ -576,15 +557,13 @@ fn generate_notices(
     );
     notices.push_str("RUST AND V8 DEPENDENCIES\n========================\n\n");
     notices.push_str(
-        &String::from_utf8(read(
-            source_root.join("resources/RUST_THIRD_PARTY_NOTICES.txt"),
-        )?)
-        .context("Rust third-party notices are not UTF-8")?,
+        &String::from_utf8(read(source_root.join("resources/RUST_THIRD_PARTY_NOTICES.txt"))?)
+            .context("Rust third-party notices are not UTF-8")?,
     );
     append_rust_notices(&mut notices, source_root)?;
     notices.push_str("\n\nEMBEDDED NPM PACKAGES\n=====================\n");
     for ((name, version), (license, package_dir, attribution)) in packages {
-        notices.push_str(&format!("\n--- {name} {version} ({license}) ---\n"));
+        writeln!(notices, "\n--- {name} {version} ({license}) ---")?;
         notices.push_str(&attribution);
         let mut license_files = Vec::new();
         for entry in read_dir(&package_dir)
@@ -614,10 +593,7 @@ fn generate_notices(
             );
         }
         for path in license_files {
-            notices.push_str(&format!(
-                "\n[{}]\n",
-                path.file_name().unwrap().to_string_lossy()
-            ));
+            writeln!(notices, "\n[{}]", path.file_name().unwrap().to_string_lossy())?;
             notices.push_str(
                 &String::from_utf8(read(&path)?).with_context(|| {
                     format!("npm license file is not UTF-8: {}", path.display())
@@ -632,10 +608,8 @@ fn generate_notices(
         "\nKUROMOJI DICTIONARY\n===================\n\n--- kuromoji 0.1.2 / LICENSE-2.0.txt ---\n",
     );
     notices.push_str(
-        &String::from_utf8(read(
-            source_root.join("resources/kuromoji/LICENSE-2.0.txt"),
-        )?)
-        .context("Kuromoji license is not UTF-8")?,
+        &String::from_utf8(read(source_root.join("resources/kuromoji/LICENSE-2.0.txt"))?)
+            .context("Kuromoji license is not UTF-8")?,
     );
     notices.push_str("\n--- kuromoji 0.1.2 / NOTICE.md ---\n");
     notices.push_str(
@@ -712,17 +686,11 @@ async fn bundle(root: &Path, config: &Value, registry_path: &Path) -> Result<Bun
     };
     let options = BundlerOptions {
         cwd: Some(root.to_path_buf()),
-        input: Some(vec![InputItem {
-            name: None,
-            import: "js/index.ts".into(),
-        }]),
+        input: Some(vec![InputItem { name: None, import: "js/index.ts".into() }]),
         platform: Some(Platform::Browser),
         format: Some(OutputFormat::Iife),
         name: Some("__textlintV8Bundle".into()),
-        resolve: Some(ResolveOptions {
-            alias: Some(aliases),
-            ..Default::default()
-        }),
+        resolve: Some(ResolveOptions { alias: Some(aliases), ..Default::default() }),
         define: Some(
             [(
                 "__TEXTLINT_V8_CONFIG__".into(),
@@ -749,10 +717,7 @@ async fn bundle(root: &Path, config: &Value, registry_path: &Path) -> Result<Bun
         println!("cargo:warning=Rolldown: {warning}");
     }
     if output.assets.len() != 1 {
-        bail!(
-            "Rolldown emitted {} outputs; expected one JavaScript chunk",
-            output.assets.len()
-        );
+        bail!("Rolldown emitted {} outputs; expected one JavaScript chunk", output.assets.len());
     }
     let asset = &output.assets[0];
     let bytes = asset.content_as_bytes();
@@ -775,21 +740,16 @@ async fn bundle(root: &Path, config: &Value, registry_path: &Path) -> Result<Bun
         .map(|(module_id, _)| Path::new(module_id.as_str()))
         .filter(|path| path.exists())
         .map(canonicalize)
-        .collect::<std::io::Result<Vec<_>>>()
+        .collect::<io::Result<Vec<_>>>()
         .context("canonicalize bundled module paths")?;
-    Ok(BundleOutput {
-        bytes: bytes.to_vec(),
-        module_ids,
-    })
+    Ok(BundleOutput { bytes: bytes.to_vec(), module_ids })
 }
 
 fn main() -> Result<()> {
     let root = var_os("CARGO_MANIFEST_DIR")
         .map(PathBuf::from)
         .context("CARGO_MANIFEST_DIR is not set")?;
-    let out_dir = var_os("OUT_DIR")
-        .map(PathBuf::from)
-        .context("OUT_DIR is not set")?;
+    let out_dir = var_os("OUT_DIR").map(PathBuf::from).context("OUT_DIR is not set")?;
     let config_path = root.join("textlint-v8.config.json");
     let update_lockfile = match var_os("TEXTLINT_V8_UPDATE_LOCKFILE") {
         None => false,
@@ -801,13 +761,7 @@ fn main() -> Result<()> {
     };
 
     println!("cargo:rerun-if-env-changed=TEXTLINT_V8_UPDATE_LOCKFILE");
-    for path in [
-        "package.json",
-        "deno.lock",
-        "textlint-v8.config.json",
-        "js",
-        "resources",
-    ] {
+    for path in ["package.json", "deno.lock", "textlint-v8.config.json", "js", "resources"] {
         println!("cargo:rerun-if-changed={path}");
     }
 

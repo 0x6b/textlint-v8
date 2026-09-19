@@ -4,10 +4,16 @@ Opinionated textlint rules compiled into a standalone binary, with no Node.js or
 
 It runs textlint for Markdown on V8 and provides both a CLI and Rust API. Rules from [`textlint-v8.config.json`](./textlint-v8.config.json) are embedded in the binary.
 
+## Install
+
+```console
+cargo install textlint-v8
+```
+
 ## Build
 
 ```console
-cargo build --release --features cli
+cargo build --release
 ```
 
 The executable is written to `target/release/textlint-v8`.
@@ -38,6 +44,13 @@ textlint-v8 --licenses
 Available formatters are `stylish` (default), `compact`, `json`, `checkstyle`, `junit`, and `tap`. With files, `--fix` writes changes back to each file. With standard input, it prints the fixed Markdown to standard output.
 
 ## Rust API
+
+When using `textlint-v8` as a library, disable the default `cli` feature:
+
+```toml
+[dependencies]
+textlint-v8 = { version = "0.1.0", default-features = false }
+```
 
 ```rust
 use textlint_v8::Textlint;
