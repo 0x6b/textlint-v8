@@ -92,4 +92,10 @@ If an enabled preset includes a rule that is also registered separately, set tha
 
 ## License
 
-MIT. See [LICENSE](./LICENSE) for details.
+The original source code in this repository is licensed under the MIT License.
+See [LICENSE](./LICENSE) for details.
+
+Distributed binaries also contain third-party Rust crates, V8, bundled npm
+packages, and Kuromoji/IPADIC dictionary data under their respective licenses.
+Run `textlint-v8 --licenses` to print the license and attribution notices
+embedded in the binary.

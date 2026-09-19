@@ -1,8 +1,6 @@
 # Runtime dependency closure for the versions fixed by Cargo.lock.
 # Update this list when Cargo.lock changes, using cargo tree --edges normal.
 adler2 2.0.1
-allocator-api2 0.2.21
-anyhow 1.0.104
 bitflags 2.13.2
 calendrical_calculations 0.2.4
 cfg-if 1.0.5
@@ -12,26 +10,24 @@ diplomat 0.16.1
 diplomat-runtime 0.16.0
 diplomat_core 0.16.1
 displaydoc 0.2.7
-equivalent 1.0.2
 flate2 1.1.10
-foldhash 0.2.0
-hashbrown 0.17.1
 icu_calendar 2.3.0
 icu_calendar_data 2.3.0
 icu_locale_core 2.3.0
 icu_locale_fallback 2.3.0
 icu_locale_fallback_data 2.3.0
 icu_provider 2.3.1
-indexmap 2.14.0
 itoa 1.0.18
 ixdtf 0.6.6
 libm 0.2.16
 litemap 0.8.3
 memchr 2.8.3
-miniz_oxide 0.8.9
+miniz_oxide 0.9.1
 num-traits 0.2.19
 paste 1.0.15
 potential_utf 0.1.6
+proc-macro2 1.0.107
+quote 1.0.47
 resb 0.1.2
 serde 1.0.229
 serde_core 1.0.229
@@ -41,6 +37,7 @@ simd-adler32 0.3.10
 smallvec 1.16.1
 stable_deref_trait 1.2.1
 strck 1.0.0
+syn 3.0.6
 synstructure 0.14.0
 temporal_capi 0.2.6
 temporal_rs 0.2.6
@@ -58,6 +55,5 @@ zerofrom-derive 0.1.8
 zerotrie 0.2.5
 zerovec 0.11.8
 zerovec-derive 0.11.6
-zlib-rs 0.6.8
 zmij 1.0.23
 zoneinfo64 0.3.0

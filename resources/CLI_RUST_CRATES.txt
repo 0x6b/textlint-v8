@@ -1,0 +1,16 @@
+# Additional runtime dependency closure when the cli feature is enabled.
+# Update this list when Cargo.lock changes, using cargo tree --features cli --edges normal.
+anstream 1.0.0
+anstyle 1.0.14
+anstyle-parse 1.0.0
+anstyle-query 1.1.5
+anyhow 1.0.104
+clap 4.6.7
+clap_builder 4.6.7
+clap_derive 4.6.7
+clap_lex 1.1.1
+colorchoice 1.0.5
+heck 0.5.0
+is_terminal_polyfill 1.70.2
+strsim 0.11.1
+utf8parse 0.2.2

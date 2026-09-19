@@ -1,8 +1,10 @@
-The Rust dependency versions are fixed by Cargo.lock. The runtime library uses
-the following direct third-party crates:
+The Rust dependency versions are fixed by Cargo.lock. This package uses the
+following direct third-party runtime crates:
 
 * anyhow — MIT OR Apache-2.0 (CLI only)
   https://github.com/dtolnay/anyhow
+* clap — MIT OR Apache-2.0 (CLI only)
+  https://github.com/clap-rs/clap
 * flate2 — MIT OR Apache-2.0
   https://github.com/rust-lang/flate2-rs
 * serde — MIT OR Apache-2.0

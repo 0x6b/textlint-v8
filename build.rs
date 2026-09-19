@@ -384,29 +384,26 @@ fn find_package_manifests(directory: &Path, manifests: &mut Vec<PathBuf>) -> Res
     Ok(())
 }
 
-fn append_rust_notices(notices: &mut String, source_root: &Path) -> Result<()> {
-    let cargo_home = var_os("CARGO_HOME").map_or_else(
-        || {
-            var_os("HOME")
-                .map(PathBuf::from)
-                .map(|home| home.join(".cargo"))
-        },
-        |path| Some(PathBuf::from(path)),
-    );
-    let cargo_home = cargo_home.context("neither CARGO_HOME nor HOME is set")?;
-    let registry_sources = cargo_home.join("registry/src");
-    let inventory = String::from_utf8(read(source_root.join("resources/RUNTIME_RUST_CRATES.txt"))?)
-        .context("runtime Rust crate inventory is not UTF-8")?;
+fn append_rust_inventory(
+    notices: &mut String,
+    registry_sources: &Path,
+    inventory_path: &Path,
+) -> Result<()> {
+    let inventory = String::from_utf8(read(inventory_path)?)
+        .with_context(|| format!("{} is not UTF-8", inventory_path.display()))?;
     for line in inventory.lines() {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let (name, version) = line
-            .split_once(' ')
-            .with_context(|| format!("invalid runtime Rust crate inventory line: {line}"))?;
+        let (name, version) = line.split_once(' ').with_context(|| {
+            format!(
+                "invalid runtime Rust crate inventory line in {}: {line}",
+                inventory_path.display()
+            )
+        })?;
         let directory_name = format!("{name}-{version}");
         let mut package_dir = None;
-        for registry in read_dir(&registry_sources).with_context(|| {
+        for registry in read_dir(registry_sources).with_context(|| {
             format!("read Cargo registry sources {}", registry_sources.display())
         })? {
             let candidate = registry?.path().join(&directory_name);
@@ -457,6 +454,32 @@ fn append_rust_notices(notices: &mut String, source_root: &Path) -> Result<()> {
                 notices.push('\n');
             }
         }
+    }
+    Ok(())
+}
+
+fn append_rust_notices(notices: &mut String, source_root: &Path) -> Result<()> {
+    let cargo_home = var_os("CARGO_HOME").map_or_else(
+        || {
+            var_os("HOME")
+                .map(PathBuf::from)
+                .map(|home| home.join(".cargo"))
+        },
+        |path| Some(PathBuf::from(path)),
+    );
+    let cargo_home = cargo_home.context("neither CARGO_HOME nor HOME is set")?;
+    let registry_sources = cargo_home.join("registry/src");
+    append_rust_inventory(
+        notices,
+        &registry_sources,
+        &source_root.join("resources/RUNTIME_RUST_CRATES.txt"),
+    )?;
+    if var_os("CARGO_FEATURE_CLI").is_some() {
+        append_rust_inventory(
+            notices,
+            &registry_sources,
+            &source_root.join("resources/CLI_RUST_CRATES.txt"),
+        )?;
     }
     Ok(())
 }
