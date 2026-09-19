@@ -6,7 +6,10 @@ use std::{
 
 use anyhow::{Context as _, Result};
 use clap::Parser;
+use cli::targets::resolve;
 use textlint_v8::{Textlint, third_party_notices};
+
+mod cli;
 
 #[derive(Parser)]
 struct Args {
@@ -44,6 +47,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    let paths = resolve(&paths)?;
     if fix {
         let results = paths
             .into_iter()

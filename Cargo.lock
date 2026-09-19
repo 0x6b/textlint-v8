@@ -4461,6 +4461,7 @@ dependencies = [
  "deno_npmrc",
  "deno_resolver",
  "flate2",
+ "glob",
  "reqwest",
  "rolldown",
  "rolldown_common",
