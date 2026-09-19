@@ -17,6 +17,8 @@ struct Args {
     licenses: bool,
     #[arg(long)]
     fix: bool,
+    #[arg(long, value_name = "path")]
+    ignore_path: Option<PathBuf>,
     #[arg(
         long,
         default_value = "stylish",
@@ -28,7 +30,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    let Args { licenses, fix, formatter, paths } = Args::parse();
+    let Args { licenses, fix, ignore_path, formatter, paths } = Args::parse();
     if licenses {
         stdout().write_all(third_party_notices().as_bytes())?;
         return Ok(());
@@ -47,7 +49,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let paths = resolve(&paths)?;
+    let paths = resolve(&paths, ignore_path.as_deref())?;
     if fix {
         let results = paths
             .into_iter()

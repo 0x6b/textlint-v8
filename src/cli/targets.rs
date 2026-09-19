@@ -1,15 +1,23 @@
 use std::{
     collections::BTreeSet,
-    fs::{canonicalize, read_dir},
+    env::current_dir,
+    fs::{canonicalize, read_dir, read_to_string},
+    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context as _, Result, bail};
 use glob::{MatchOptions, glob_with};
+use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 
 const EXTENSIONS: [&str; 8] = ["md", "markdown", "mdown", "mkdn", "mkd", "mdwn", "mkdown", "ron"];
 
-pub(crate) fn resolve(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
+pub(crate) fn resolve(paths: &[PathBuf], ignore_path: Option<&Path>) -> Result<Vec<PathBuf>> {
+    let cwd = current_dir().context("failed to determine the current directory")?;
+    resolve_from(paths, &cwd, ignore_path)
+}
+
+fn resolve_from(paths: &[PathBuf], cwd: &Path, ignore_path: Option<&Path>) -> Result<Vec<PathBuf>> {
     let mut files = BTreeSet::new();
 
     for target in paths {
@@ -39,7 +47,38 @@ pub(crate) fn resolve(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
         bail!("No files matching the pattern were found")
     }
 
+    let ignores = load_ignores(cwd, ignore_path)?;
+    files.retain(|file| !ignores.is_match(file.strip_prefix(cwd).unwrap_or(file)));
+
     Ok(files.into_iter().collect())
+}
+
+fn load_ignores(cwd: &Path, ignore_path: Option<&Path>) -> Result<GlobSet> {
+    let path = ignore_path.map_or_else(|| cwd.join(".textlintignore"), Path::to_path_buf);
+    let contents = match read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == ErrorKind::NotFound => String::new(),
+        Err(error) => {
+            return Err(error).with_context(|| format!("failed to read {}", path.display()));
+        }
+    };
+    let mut builder = GlobSetBuilder::new();
+    for pattern in contents
+        .lines()
+        .filter(|line| !line.trim().is_empty() && !line.trim().starts_with('#'))
+    {
+        builder.add(
+            GlobBuilder::new(pattern)
+                .literal_separator(true)
+                .build()
+                .with_context(|| {
+                    format!("invalid ignore pattern in {}: {pattern}", path.display())
+                })?,
+        );
+    }
+    builder
+        .build()
+        .with_context(|| format!("failed to compile ignore patterns from {}", path.display()))
 }
 
 fn collect(path: &Path, files: &mut BTreeSet<PathBuf>) -> Result<()> {
@@ -133,7 +172,7 @@ mod tests {
         temp.write("node_modules/dependency.md");
         temp.write(".git/internal.md");
 
-        let actual = resolve(from_ref(&temp.0)).unwrap();
+        let actual = resolve_from(from_ref(&temp.0), &temp.0, None).unwrap();
 
         assert_eq!(actual, [canonicalize(dotfile).unwrap(), canonicalize(markdown).unwrap()]);
     }
@@ -146,7 +185,7 @@ mod tests {
         temp.write("nested/document.ron");
         let pattern = temp.0.join("**/*.md");
 
-        let actual = resolve(&[pattern, nested.clone()]).unwrap();
+        let actual = resolve_from(&[pattern, nested.clone()], &temp.0, None).unwrap();
 
         assert_eq!(actual, [canonicalize(nested).unwrap(), canonicalize(root).unwrap()]);
     }
@@ -156,7 +195,8 @@ mod tests {
         let temp = TempDir::new();
         let matched = temp.write("document.md");
 
-        let actual = resolve(&[temp.0.join("missing-*.md"), matched.clone()]).unwrap();
+        let actual =
+            resolve_from(&[temp.0.join("missing-*.md"), matched.clone()], &temp.0, None).unwrap();
 
         assert_eq!(actual, [canonicalize(matched).unwrap()]);
     }
@@ -165,8 +205,63 @@ mod tests {
     fn rejects_targets_without_any_matches() {
         let temp = TempDir::new();
 
-        let error = resolve(&[temp.0.join("missing-*.md")]).unwrap_err();
+        let error = resolve_from(&[temp.0.join("missing-*.md")], &temp.0, None).unwrap_err();
 
         assert_eq!(error.to_string(), "No files matching the pattern were found");
+    }
+
+    #[test]
+    fn applies_ignore_patterns_to_explicit_and_discovered_files() {
+        let temp = TempDir::new();
+        let kept = temp.write("nested/kept.md");
+        let ignored = temp.write("nested/ignored.md");
+        temp.write("ignored/child.md");
+        fs::write(temp.0.join(".textlintignore"), "# comment\n\nnested/ignored.md\nignored/**\n")
+            .unwrap();
+
+        let actual = resolve_from(&[temp.0.clone(), ignored], &temp.0, None).unwrap();
+
+        assert_eq!(actual, [canonicalize(kept).unwrap()]);
+    }
+
+    #[test]
+    fn accepts_all_targets_being_ignored() {
+        let temp = TempDir::new();
+        let ignored = temp.write("ignored.md");
+        fs::write(temp.0.join(".textlintignore"), "*.md\n").unwrap();
+
+        let actual = resolve_from(&[ignored], &temp.0, None).unwrap();
+
+        assert!(actual.is_empty());
+    }
+
+    #[test]
+    fn resolves_custom_ignore_paths_against_the_working_directory() {
+        let temp = TempDir::new();
+        let ignored = temp.write("nested/ignored.md");
+        let kept = temp.write("custom/kept.md");
+        let ignore_path = temp.0.join("custom/ignore-patterns");
+        fs::write(&ignore_path, "nested/**\n").unwrap();
+
+        let actual =
+            resolve_from(std::slice::from_ref(&temp.0), &temp.0, Some(&ignore_path)).unwrap();
+
+        assert_eq!(actual, [canonicalize(kept).unwrap()]);
+        assert!(!actual.contains(&canonicalize(ignored).unwrap()));
+    }
+
+    #[test]
+    fn tolerates_a_missing_custom_ignore_path() {
+        let temp = TempDir::new();
+        let document = temp.write("document.md");
+
+        let actual = resolve_from(
+            std::slice::from_ref(&document),
+            &temp.0,
+            Some(&temp.0.join("missing-ignore-file")),
+        )
+        .unwrap();
+
+        assert_eq!(actual, [canonicalize(document).unwrap()]);
     }
 }
