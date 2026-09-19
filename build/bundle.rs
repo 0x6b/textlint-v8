@@ -33,6 +33,7 @@ struct TextlintBundlePlugin {
     dictionary_loader: String,
     dictionary_base_loader: String,
     conjunctive_particle_rule: String,
+    pluralize_shim: String,
 }
 
 pub struct BundleOutput {
@@ -50,6 +51,9 @@ impl Plugin for TextlintBundlePlugin {
         _ctx: &PluginContext,
         args: &HookResolveIdArgs<'_>,
     ) -> HookResolveIdReturn {
+        if args.specifier == "pluralize" {
+            return Ok(Some(HookResolveIdOutput::from_id(self.pluralize_shim.clone())));
+        }
         if (args.specifier.ends_with("NodeDictionaryLoader")
             || args.specifier.ends_with("NodeDictionaryLoader.js"))
             && args.importer.is_some_and(|importer| importer.contains("/kuromoji/"))
@@ -243,6 +247,7 @@ pub async fn bundle(root: &Path, config: &Value, registry_path: &Path) -> Result
         conjunctive_particle_rule: absolute(
             "node_modules/textlint-rule-no-doubled-conjunctive-particle-ga/lib/no-doubled-conjunctive-particle-ga.js",
         ),
+        pluralize_shim: absolute("js/shim/pluralize.cjs"),
     };
     let options = BundlerOptions {
         cwd: Some(root.to_path_buf()),

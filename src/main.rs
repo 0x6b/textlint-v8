@@ -32,6 +32,10 @@ struct Args {
     output_file: Option<PathBuf>,
     #[arg(long)]
     quiet: bool,
+    #[arg(long, action = clap::ArgAction::SetTrue, overrides_with = "no_color")]
+    color: bool,
+    #[arg(long = "no-color", action = clap::ArgAction::SetTrue, overrides_with = "color")]
+    no_color: bool,
     #[arg(long, value_name = "path")]
     ignore_path: Option<PathBuf>,
     #[arg(long)]
@@ -44,7 +48,7 @@ struct Args {
         alias = "formatter",
         default_value = "stylish",
         value_name = "name",
-        help = "Formatter: stylish, compact, json, checkstyle, junit, or tap"
+        help = "Use a built-in textlint formatter"
     )]
     formatter: String,
     paths: Vec<PathBuf>,
@@ -69,12 +73,15 @@ fn run() -> Result<u8> {
         dry_run,
         output_file,
         quiet,
+        color,
+        no_color,
         ignore_path,
         stdin,
         stdin_filename,
         formatter,
         paths,
     } = args;
+    let color = color || !no_color;
     if licenses {
         stdout().write_all(third_party_notices().as_bytes())?;
         return Ok(0);
@@ -95,7 +102,7 @@ fn run() -> Result<u8> {
                 if quiet {
                     retain_errors_in_fix_results(&mut results);
                 }
-                let output = textlint.format_fix_results(&results, &formatter)?;
+                let output = textlint.format_fix_results_with_color(&results, &formatter, color)?;
                 write_output(&output, output_file.as_ref())?;
                 return Ok(status(has_errors, output_file.is_some() || dry_run));
             } else {
@@ -104,7 +111,8 @@ fn run() -> Result<u8> {
                 if quiet {
                     retain_errors_in_lint_results(&mut results);
                 }
-                let output = textlint.format_lint_results(&results, &formatter)?;
+                let output =
+                    textlint.format_lint_results_with_color(&results, &formatter, color)?;
                 write_output(&output, output_file.as_ref())?;
                 return Ok(status(has_errors, output_file.is_some()));
             }
@@ -137,7 +145,7 @@ fn run() -> Result<u8> {
         if quiet {
             retain_errors_in_fix_results(&mut results);
         }
-        let output = textlint.format_fix_results(&results, &formatter)?;
+        let output = textlint.format_fix_results_with_color(&results, &formatter, color)?;
         write_output(&output, output_file.as_ref())?;
         Ok(status(has_errors, output_file.is_some() || dry_run))
     } else {
@@ -153,7 +161,7 @@ fn run() -> Result<u8> {
         if quiet {
             retain_errors_in_lint_results(&mut results);
         }
-        let output = textlint.format_lint_results(&results, &formatter)?;
+        let output = textlint.format_lint_results_with_color(&results, &formatter, color)?;
         write_output(&output, output_file.as_ref())?;
         Ok(status(has_errors, output_file.is_some()))
     }

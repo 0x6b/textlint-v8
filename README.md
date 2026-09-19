@@ -24,24 +24,27 @@ The executable is written to `target/release/textlint-v8`.
 # Lint a file
 textlint-v8 document.md
 
-# Lint multiple files
-textlint-v8 first.md second.md
+# Lint files, directories, or quoted globs
+textlint-v8 first.md docs/ "articles/**/*.md"
 
 # Fix problems automatically
 textlint-v8 --fix document.md
 
 # Lint or fix standard input
-cat document.md | textlint-v8
-cat document.md | textlint-v8 --fix
+cat document.md | textlint-v8 --stdin --stdin-filename document.md
+cat document.md | textlint-v8 --stdin --stdin-filename document.md --fix --format fixed-result
 
 # Select a formatter
-textlint-v8 --formatter json document.md
+textlint-v8 --format json document.md
+
+# Override .textlintignore and disable ANSI colors
+textlint-v8 --ignore-path config/textlint.ignore --no-color docs/
 
 # Print licenses for embedded dependencies
 textlint-v8 --licenses
 ```
 
-Available formatters are `stylish` (default), `compact`, `json`, `checkstyle`, `junit`, and `tap`. With files, `--fix` writes changes back to each file. With standard input, it prints the fixed Markdown to standard output.
+Lint formatters are `checkstyle`, `compact`, `github`, `jslint-xml`, `json`, `junit`, `pretty-error`, `stylish` (default), `table`, `tap`, and `unix`. Fix formatters are `compats`, `diff`, `fixed-result`, `json`, and `stylish` (default). With files, `--fix` writes changes back unless `--dry-run` is set.
 
 ## Rust API
 

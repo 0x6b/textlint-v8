@@ -44,4 +44,24 @@ pub struct LintMessage {
     pub severity: usize,
     /// The zero-based start and end source indices reported by textlint.
     pub range: Vec<usize>,
+    /// The start and end positions used by formatters that report source spans.
+    pub loc: LintLocation,
+}
+
+/// A source span reported by textlint.
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct LintLocation {
+    /// The beginning of the source span.
+    pub start: LintPosition,
+    /// The end of the source span.
+    pub end: LintPosition,
+}
+
+/// A line and column within a source document.
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct LintPosition {
+    /// The one-based source line.
+    pub line: usize,
+    /// The one-based source column.
+    pub column: usize,
 }

@@ -26,4 +26,4 @@ mod types;
 pub use error::{Error, Result};
 pub use notices::third_party_notices;
 pub use runtime::Textlint;
-pub use types::{FixResult, LintMessage, LintResult};
+pub use types::{FixResult, LintLocation, LintMessage, LintPosition, LintResult};

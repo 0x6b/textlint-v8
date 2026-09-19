@@ -1,11 +1,11 @@
 use std::{
-    fs::{copy, create_dir_all, read_dir, remove_dir_all},
+    fs::{copy, create_dir_all, read_dir, read_to_string, remove_dir_all, remove_file, write},
     path::{Path, PathBuf},
     result,
     sync::Arc,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use deno_config::deno_json::NodeModulesDirMode;
 use deno_error::JsErrorBox;
 use deno_npm_cache::{
@@ -114,6 +114,21 @@ pub async fn install_dependencies(root: &Path, update_lockfile: bool) -> Result<
         .context("Deno did not open deno.lock")?
         .write_if_changed()?;
 
+    Ok(())
+}
+
+pub fn patch_legacy_style_format(root: &Path) -> Result<()> {
+    let path = root.join("node_modules/.deno/node_modules/@azu/style-format/ansi-codes.js");
+    let source = read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    match source.matches("\\033").count() {
+        44 => {
+            remove_file(&path).with_context(|| format!("unlink {}", path.display()))?;
+            write(&path, source.replace("\\033", "\\x1b"))
+                .with_context(|| format!("patch legacy escapes in {}", path.display()))?;
+        }
+        0 if source.matches("\\x1b").count() == 44 => {}
+        _ => bail!("@azu/style-format changed; expected 44 ANSI escape sequences"),
+    }
     Ok(())
 }
 

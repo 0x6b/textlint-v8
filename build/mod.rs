@@ -13,7 +13,9 @@ use anyhow::{Context, Result, bail};
 use bundle::{bundle, generate_registry, rule_packages};
 use docs::write_placeholder_assets;
 use notices::{copy_dictionaries, generate_notices};
-use npm::{DENO_INSTALLER_SOURCE, install_dependencies, prepare_workspace};
+use npm::{
+    DENO_INSTALLER_SOURCE, install_dependencies, patch_legacy_style_format, prepare_workspace,
+};
 use serde_json::{Value, from_slice};
 use tokio::runtime::Builder;
 
@@ -38,7 +40,8 @@ pub fn run() -> Result<()> {
     };
 
     println!("cargo:rerun-if-env-changed=TEXTLINT_V8_UPDATE_LOCKFILE");
-    for path in ["package.json", "deno.lock", "textlint-v8.config.json", "js", "resources"] {
+    for path in ["build", "package.json", "deno.lock", "textlint-v8.config.json", "js", "resources"]
+    {
         println!("cargo:rerun-if-changed={path}");
     }
 
@@ -61,6 +64,7 @@ pub fn run() -> Result<()> {
         .context("create build runtime")?;
     let bundle = runtime.block_on(async {
         install_dependencies(&workspace, update_lockfile).await?;
+        patch_legacy_style_format(&workspace)?;
         bundle(&workspace, &config, &registry_path).await
     })?;
 

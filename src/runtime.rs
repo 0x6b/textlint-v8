@@ -39,6 +39,7 @@ struct LintRequest<'a> {
 struct FormatRequest<'a, T: ?Sized> {
     formatter_name: &'a str,
     results: &'a T,
+    color: bool,
 }
 
 /// An embedded textlint runtime.
@@ -299,8 +300,9 @@ impl Textlint {
 
     /// Formats lint results with one of the embedded textlint formatters.
     ///
-    /// Supported formatter names are `stylish`, `compact`, `json`,
-    /// `checkstyle`, `junit`, and `tap`.
+    /// Supported formatter names are `checkstyle`, `compact`, `github`,
+    /// `jslint-xml`, `json`, `junit`, `pretty-error`, `stylish`, `table`, `tap`,
+    /// and `unix`.
     ///
     /// # Errors
     ///
@@ -311,13 +313,28 @@ impl Textlint {
         results: &[LintResult],
         formatter_name: &str,
     ) -> Result<String> {
-        self.invoke("format", &FormatRequest { formatter_name, results })
+        self.format_lint_results_with_color(results, formatter_name, true)
+    }
+
+    /// Formats lint results and controls ANSI color output.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `formatter_name` is unsupported, the embedded
+    /// JavaScript fails, or its response cannot be deserialized.
+    pub fn format_lint_results_with_color(
+        &mut self,
+        results: &[LintResult],
+        formatter_name: &str,
+        color: bool,
+    ) -> Result<String> {
+        self.invoke("formatLint", &FormatRequest { formatter_name, results, color })
     }
 
     /// Formats fix results with one of the embedded textlint formatters.
     ///
-    /// Supported formatter names are `stylish`, `compact`, `json`,
-    /// `checkstyle`, `junit`, and `tap`.
+    /// Supported formatter names are `compats`, `diff`, `fixed-result`, `json`,
+    /// and `stylish`.
     ///
     /// # Errors
     ///
@@ -328,6 +345,21 @@ impl Textlint {
         results: &[FixResult],
         formatter_name: &str,
     ) -> Result<String> {
-        self.invoke("format", &FormatRequest { formatter_name, results })
+        self.format_fix_results_with_color(results, formatter_name, true)
+    }
+
+    /// Formats fix results and controls ANSI color output.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `formatter_name` is unsupported, the embedded
+    /// JavaScript fails, or its response cannot be deserialized.
+    pub fn format_fix_results_with_color(
+        &mut self,
+        results: &[FixResult],
+        formatter_name: &str,
+        color: bool,
+    ) -> Result<String> {
+        self.invoke("formatFix", &FormatRequest { formatter_name, results, color })
     }
 }
