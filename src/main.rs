@@ -13,8 +13,14 @@ use textlint_v8::{Textlint, third_party_notices};
 mod cli;
 
 #[derive(Parser)]
-#[command(override_usage = "textlint-v8 [OPTIONS] [FILE|DIR|GLOB]...")]
+#[command(
+    version,
+    disable_version_flag = true,
+    override_usage = "textlint-v8 [OPTIONS] [FILE|DIR|GLOB]..."
+)]
 struct Args {
+    #[arg(short = 'v', long, action = clap::ArgAction::Version)]
+    version: bool,
     #[arg(long, alias = "third-party-licenses", conflicts_with = "paths")]
     licenses: bool,
     #[arg(long)]
@@ -26,7 +32,9 @@ struct Args {
     #[arg(long, value_name = "filename")]
     stdin_filename: Option<PathBuf>,
     #[arg(
-        long,
+        short = 'f',
+        long = "format",
+        alias = "formatter",
         default_value = "stylish",
         value_name = "name",
         help = "Formatter: stylish, compact, json, checkstyle, junit, or tap"
@@ -38,6 +46,7 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
     let Args {
+        version: _,
         licenses,
         fix,
         ignore_path,
