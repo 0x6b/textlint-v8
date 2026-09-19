@@ -46,6 +46,12 @@ textlint-v8 --licenses
 
 Lint formatters are `checkstyle`, `compact`, `github`, `jslint-xml`, `json`, `junit`, `pretty-error`, `stylish` (default), `table`, `tap`, and `unix`. Fix formatters are `compats`, `diff`, `fixed-result`, `json`, and `stylish` (default). With files, `--fix` writes changes back unless `--dry-run` is set.
 
+### CLI compatibility
+
+`textlint-v8` supports textlint 15.8.0's normal file, directory, glob, stdin, ignore, fix, formatter, and output workflows. `--experimental` is accepted as a compatibility no-op.
+
+Rule and plugin configuration is intentionally replaced by the embedded rule set. Cache, debug logging, MCP mode, and dynamically loaded external formatters are not supported.
+
 ## Rust API
 
 When using `textlint-v8` as a library, disable the default `cli` feature:

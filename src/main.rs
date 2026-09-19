@@ -26,12 +26,14 @@ struct Args {
     licenses: bool,
     #[arg(long)]
     fix: bool,
-    #[arg(long, requires = "fix")]
+    #[arg(long)]
     dry_run: bool,
     #[arg(short = 'o', long, value_name = "path")]
     output_file: Option<PathBuf>,
     #[arg(long)]
     quiet: bool,
+    #[arg(long)]
+    experimental: bool,
     #[arg(long, action = clap::ArgAction::SetTrue, overrides_with = "no_color")]
     color: bool,
     #[arg(long = "no-color", action = clap::ArgAction::SetTrue, overrides_with = "color")]
@@ -73,6 +75,7 @@ fn run() -> Result<u8> {
         dry_run,
         output_file,
         quiet,
+        experimental: _,
         color,
         no_color,
         ignore_path,
