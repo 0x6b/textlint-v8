@@ -1,0 +1,342 @@
+use std::{io::Read as _, marker::PhantomData, rc::Rc, sync::Once};
+
+use flate2::read::GzDecoder;
+use serde::{Deserialize, Serialize};
+use serde_json::{from_str, to_string};
+use v8::{
+    ArrayBuffer, Context, ContextScope, CreateParams, Exception, Function,
+    FunctionCallbackArguments, Global, Isolate, Local, MicrotasksPolicy, Object, OwnedIsolate,
+    PinScope, Promise, PromiseState, ReturnValue, Script, V8, Value, new_default_platform,
+};
+
+use crate::{
+    error::{Error, Result},
+    types::{FixResult, LintResult},
+};
+
+const TEXTLINT_BUNDLE: &str = include_str!(concat!(env!("OUT_DIR"), "/textlint-v8.js"));
+const V8_PRELUDE: &str = r"
+globalThis.console = {
+  log() {}, debug() {}, info() {}, warn() {}, error() {}
+};
+";
+static V8_INIT: Once = Once::new();
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LintRequest<'a> {
+    text: &'a str,
+    file_path: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FormatRequest<'a, T: ?Sized> {
+    formatter_name: &'a str,
+    results: &'a T,
+}
+
+/// An embedded textlint runtime.
+///
+/// Constructing this type initializes V8 and evaluates the bundled JavaScript.
+/// Reusing an instance avoids repeating that work for every document.
+///
+/// A `Textlint` instance is neither [`Send`] nor [`Sync`] because its V8
+/// isolate is thread-affine. All operations require exclusive access to the
+/// instance.
+pub struct Textlint {
+    state: V8State,
+    // V8 isolates are thread-affine. Keep that constraint explicit even if
+    // rusty_v8 changes its auto-trait implementations.
+    _not_send_or_sync: PhantomData<Rc<()>>,
+}
+
+struct V8State {
+    context: Global<Context>,
+    isolate: OwnedIsolate,
+}
+
+macro_rules! dictionary {
+    ($filename:literal) => {
+        include_bytes!(concat!(env!("OUT_DIR"), "/kuromoji/", $filename))
+    };
+}
+
+fn compressed_dictionary(filename: &str) -> Option<&'static [u8]> {
+    match filename {
+        "base.dat.gz" => Some(dictionary!("base.dat.gz")),
+        "check.dat.gz" => Some(dictionary!("check.dat.gz")),
+        "tid.dat.gz" => Some(dictionary!("tid.dat.gz")),
+        "tid_pos.dat.gz" => Some(dictionary!("tid_pos.dat.gz")),
+        "tid_map.dat.gz" => Some(dictionary!("tid_map.dat.gz")),
+        "cc.dat.gz" => Some(dictionary!("cc.dat.gz")),
+        "unk.dat.gz" => Some(dictionary!("unk.dat.gz")),
+        "unk_pos.dat.gz" => Some(dictionary!("unk_pos.dat.gz")),
+        "unk_map.dat.gz" => Some(dictionary!("unk_map.dat.gz")),
+        "unk_char.dat.gz" => Some(dictionary!("unk_char.dat.gz")),
+        "unk_compat.dat.gz" => Some(dictionary!("unk_compat.dat.gz")),
+        "unk_invoke.dat.gz" => Some(dictionary!("unk_invoke.dat.gz")),
+        _ => None,
+    }
+}
+
+fn throw_error(scope: &mut PinScope, message: &str) {
+    let message = v8::String::new(scope, message).expect("short error message");
+    let error = Exception::error(scope, message);
+    scope.throw_exception(error);
+}
+
+fn load_dictionary(
+    scope: &mut PinScope,
+    args: FunctionCallbackArguments,
+    mut return_value: ReturnValue,
+) {
+    let filename = args.get(0).to_rust_string_lossy(scope);
+    let Some(compressed) = compressed_dictionary(&filename) else {
+        throw_error(scope, &format!("unknown dictionary file: {filename}"));
+        return;
+    };
+
+    let mut decoded = Vec::new();
+    if let Err(error) = GzDecoder::new(compressed).read_to_end(&mut decoded) {
+        throw_error(scope, &format!("failed to decompress {filename}: {error}"));
+        return;
+    }
+
+    let store = ArrayBuffer::new_backing_store_from_vec(decoded).make_shared();
+    let buffer = ArrayBuffer::with_backing_store(scope, &store);
+    return_value.set(buffer.into());
+}
+
+fn v8_error(
+    scope: &mut PinScope,
+    operation: &'static str,
+    exception: Option<Local<Value>>,
+    stack: Option<Local<Value>>,
+) -> Error {
+    Error::V8 {
+        operation,
+        message: exception
+            .map(|value| value.to_rust_string_lossy(scope))
+            .unwrap_or_else(|| "V8 returned no exception details".to_owned()),
+        stack: stack.map(|value| value.to_rust_string_lossy(scope)),
+    }
+}
+
+fn javascript_error(scope: &mut PinScope, value: Local<Value>) -> Error {
+    let message = value.to_rust_string_lossy(scope);
+    let stack = Local::<Object>::try_from(value).ok().and_then(|object| {
+        let name = v8::String::new(scope, "stack")?;
+        object
+            .get(scope, name.into())
+            .map(|stack| stack.to_rust_string_lossy(scope))
+    });
+    Error::JavaScript { message, stack }
+}
+
+fn run_script(scope: &mut PinScope, source: &str, operation: &'static str) -> Result<()> {
+    v8::tc_scope!(let scope, scope);
+    let Some(source) = v8::String::new(scope, source) else {
+        let exception = scope.exception();
+        let stack = scope.stack_trace();
+        return Err(v8_error(scope, operation, exception, stack));
+    };
+    let Some(script) = Script::compile(scope, source, None) else {
+        let exception = scope.exception();
+        let stack = scope.stack_trace();
+        return Err(v8_error(scope, operation, exception, stack));
+    };
+    if script.run(scope).is_none() {
+        let exception = scope.exception();
+        let stack = scope.stack_trace();
+        return Err(v8_error(scope, operation, exception, stack));
+    }
+    Ok(())
+}
+
+impl Textlint {
+    /// Creates a textlint runtime and evaluates the embedded bundle.
+    ///
+    /// The process-wide V8 platform is initialized only once, even when
+    /// multiple runtimes are created.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if V8 cannot create the runtime or evaluate the
+    /// embedded JavaScript.
+    pub fn new() -> Result<Self> {
+        V8_INIT.call_once(|| {
+            let platform = new_default_platform(0, false).make_shared();
+            V8::initialize_platform(platform);
+            V8::initialize();
+        });
+
+        let mut isolate = Isolate::new(CreateParams::default());
+        isolate.set_microtasks_policy(MicrotasksPolicy::Explicit);
+        let context = {
+            v8::scope!(let scope, &mut isolate);
+            let context = Context::new(scope, Default::default());
+            let scope = &mut ContextScope::new(scope, context);
+
+            let loader = Function::new(scope, load_dictionary).ok_or_else(|| Error::V8 {
+                operation: "create the dictionary loader",
+                message: "V8 returned no function".to_owned(),
+                stack: None,
+            })?;
+            let loader_name =
+                v8::String::new(scope, "__loadKuromojiDictionary").ok_or_else(|| Error::V8 {
+                    operation: "allocate the dictionary loader name",
+                    message: "V8 returned no string".to_owned(),
+                    stack: None,
+                })?;
+            if !context
+                .global(scope)
+                .set(scope, loader_name.into(), loader.into())
+                .unwrap_or(false)
+            {
+                return Err(Error::V8 {
+                    operation: "install the dictionary loader",
+                    message: "V8 rejected the global property".to_owned(),
+                    stack: None,
+                });
+            }
+
+            run_script(scope, V8_PRELUDE, "evaluate the V8 prelude")?;
+            run_script(
+                scope,
+                TEXTLINT_BUNDLE,
+                "evaluate the embedded textlint bundle",
+            )?;
+            Global::new(scope, context)
+        };
+
+        Ok(Self {
+            state: V8State { context, isolate },
+            _not_send_or_sync: PhantomData,
+        })
+    }
+
+    fn invoke<Request: Serialize + ?Sized, Response: for<'de> Deserialize<'de>>(
+        &mut self,
+        method: &'static str,
+        request: &Request,
+    ) -> Result<Response> {
+        let request = to_string(request).map_err(Error::RequestSerialization)?;
+        let V8State { context, isolate } = &mut self.state;
+        v8::scope!(let scope, isolate);
+        let context = Local::new(scope, &*context);
+        let scope = &mut ContextScope::new(scope, context);
+        v8::tc_scope!(let scope, scope);
+
+        let result = (|| {
+            let api_name = v8::String::new(scope, "textlintV8")?;
+            let api = context.global(scope).get(scope, api_name.into())?;
+            let api = v8::Local::<Object>::try_from(api).ok()?;
+            let method_name = v8::String::new(scope, method)?;
+            let function = api.get(scope, method_name.into())?;
+            let function = v8::Local::<Function>::try_from(function).ok()?;
+            let request = v8::String::new(scope, &request)?;
+            function.call(scope, api.into(), &[request.into()])
+        })();
+        let Some(result) = result else {
+            let exception = scope.exception();
+            let stack = scope.stack_trace();
+            return Err(v8_error(scope, method, exception, stack));
+        };
+        let promise = v8::Local::<Promise>::try_from(result).map_err(|_| Error::V8 {
+            operation: method,
+            message: format!("textlintV8.{method} did not return a Promise"),
+            stack: None,
+        })?;
+
+        scope.perform_microtask_checkpoint();
+        match promise.state() {
+            PromiseState::Pending => return Err(Error::PromisePending),
+            PromiseState::Rejected => {
+                let error = promise.result(scope);
+                return Err(javascript_error(scope, error));
+            }
+            PromiseState::Fulfilled => {}
+        }
+
+        let output = promise.result(scope).to_rust_string_lossy(scope);
+        from_str(&output).map_err(|source| Error::InvalidResponse {
+            response: output,
+            source,
+        })
+    }
+
+    /// Lints a Markdown document.
+    ///
+    /// `file_path` labels the result and is passed to textlint for rule and
+    /// formatter output; this method does not read the path from the file
+    /// system.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request cannot be serialized, the embedded
+    /// JavaScript fails, or its response cannot be deserialized.
+    pub fn lint(&mut self, text: &str, file_path: &str) -> Result<LintResult> {
+        self.invoke("lint", &LintRequest { text, file_path })
+    }
+
+    /// Applies textlint's automatic fixes to a Markdown document.
+    ///
+    /// `file_path` labels the result; this method neither reads from nor writes
+    /// to the file system. The fixed document is returned in
+    /// [`FixResult::output`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request cannot be serialized, the embedded
+    /// JavaScript fails, or its response cannot be deserialized.
+    pub fn fix(&mut self, text: &str, file_path: &str) -> Result<FixResult> {
+        self.invoke("fix", &LintRequest { text, file_path })
+    }
+
+    /// Formats lint results with one of the embedded textlint formatters.
+    ///
+    /// Supported formatter names are `stylish`, `compact`, `json`,
+    /// `checkstyle`, `junit`, and `tap`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `formatter_name` is unsupported, the embedded
+    /// JavaScript fails, or its response cannot be deserialized.
+    pub fn format_lint_results(
+        &mut self,
+        results: &[LintResult],
+        formatter_name: &str,
+    ) -> Result<String> {
+        self.invoke(
+            "format",
+            &FormatRequest {
+                formatter_name,
+                results,
+            },
+        )
+    }
+
+    /// Formats fix results with one of the embedded textlint formatters.
+    ///
+    /// Supported formatter names are `stylish`, `compact`, `json`,
+    /// `checkstyle`, `junit`, and `tap`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `formatter_name` is unsupported, the embedded
+    /// JavaScript fails, or its response cannot be deserialized.
+    pub fn format_fix_results(
+        &mut self,
+        results: &[FixResult],
+        formatter_name: &str,
+    ) -> Result<String> {
+        self.invoke(
+            "format",
+            &FormatRequest {
+                formatter_name,
+                results,
+            },
+        )
+    }
+}
