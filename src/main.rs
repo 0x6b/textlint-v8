@@ -1,8 +1,8 @@
 use std::{
-    fs::{read_to_string, write},
+    fs::{create_dir_all, read_to_string, write},
     io,
     io::{Read as _, Write as _, stdout},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::ExitCode,
 };
 
@@ -195,6 +195,10 @@ fn retain_errors_in_fix_results(results: &mut [FixResult]) {
 
 fn write_output(output: &str, output_file: Option<&PathBuf>) -> Result<()> {
     if let Some(path) = output_file {
+        if let Some(parent) = path.parent().filter(|parent| *parent != Path::new("")) {
+            create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
         write(path, output).with_context(|| format!("failed to write {}", path.display()))?;
     } else {
         stdout().write_all(output.as_bytes())?;
