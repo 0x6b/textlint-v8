@@ -7,12 +7,20 @@ following direct third-party runtime crates:
   https://github.com/clap-rs/clap
 * flate2 — MIT OR Apache-2.0
   https://github.com/rust-lang/flate2-rs
+* glob — MIT OR Apache-2.0 (CLI only)
+  https://github.com/rust-lang/glob
+* globset — Unlicense OR MIT (CLI only)
+  https://github.com/BurntSushi/ripgrep/tree/master/crates/globset
+* rmcp — Apache-2.0 (CLI only)
+  https://github.com/modelcontextprotocol/rust-sdk
 * serde — MIT OR Apache-2.0
   https://github.com/serde-rs/serde
 * serde_json — MIT OR Apache-2.0
   https://github.com/serde-rs/json
 * thiserror — MIT OR Apache-2.0
   https://github.com/dtolnay/thiserror
+* tokio — MIT (CLI only)
+  https://github.com/tokio-rs/tokio
 * rusty_v8 — MIT
   Copyright (c) 2018-2019 the Deno authors
   https://github.com/denoland/rusty_v8

@@ -8,7 +8,7 @@ use anyhow::{Context as _, Result, bail};
 use clap::{CommandFactory as _, Parser as _};
 use textlint_v8::{FixResult, LintMessage, LintResult, Textlint, third_party_notices};
 
-use super::{options::Args, targets::resolve};
+use super::{mcp, options::Args, targets::resolve};
 
 struct Document {
     text: String,
@@ -18,6 +18,9 @@ struct Document {
 
 pub(crate) fn run() -> Result<u8> {
     let args = Args::parse();
+    if args.mcp {
+        return mcp::run();
+    }
     if args.licenses {
         stdout().write_all(third_party_notices().as_bytes())?;
         return Ok(0);

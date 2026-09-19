@@ -75,7 +75,9 @@ fn append_rust_inventory(
         }
         license_files.sort();
         if license_files.is_empty() {
-            if name == "v8" {
+            // These published crates omit license files; their licenses are included in
+            // RUST_THIRD_PARTY_NOTICES.txt above.
+            if matches!(name, "v8" | "rmcp" | "rmcp-macros") {
                 continue;
             }
             bail!("runtime Rust crate has no license file: {name} {version}");

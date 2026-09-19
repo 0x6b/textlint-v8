@@ -11,6 +11,8 @@ use clap::Parser;
 pub(super) struct Args {
     #[arg(short = 'v', long, action = clap::ArgAction::Version)]
     pub(super) version: Option<bool>,
+    #[arg(long, exclusive = true, help = "Run a Model Context Protocol server over stdio")]
+    pub(super) mcp: bool,
     #[arg(long, alias = "third-party-licenses", conflicts_with = "paths")]
     pub(super) licenses: bool,
     #[arg(long)]

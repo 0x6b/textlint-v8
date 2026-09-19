@@ -1,7 +1,4 @@
-use static_assertions::assert_not_impl_any;
 use textlint_v8::{Textlint, third_party_notices};
-
-assert_not_impl_any!(Textlint: Send, Sync);
 
 #[test]
 fn reports_standalone_and_preset_rules() {

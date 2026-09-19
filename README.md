@@ -42,6 +42,9 @@ textlint-v8 --ignore-path config/textlint.ignore --no-color docs/
 
 # Print licenses for embedded dependencies
 textlint-v8 --licenses
+
+# Run the Model Context Protocol server over stdio
+textlint-v8 --mcp
 ```
 
 Lint formatters are `checkstyle`, `compact`, `github`, `jslint-xml`, `json`, `junit`, `pretty-error`, `stylish` (default), `table`, `tap`, and `unix`. Fix formatters are `compats`, `diff`, `fixed-result`, `json`, and `stylish` (default). With files, `--fix` writes changes back unless `--dry-run` is set.
@@ -50,7 +53,15 @@ Lint formatters are `checkstyle`, `compact`, `github`, `jslint-xml`, `json`, `ju
 
 `textlint-v8` supports textlint 15.8.0's normal file, directory, glob, stdin, ignore, fix, formatter, and output workflows. `--experimental` is accepted as a compatibility no-op.
 
-Rule and plugin configuration is intentionally replaced by the embedded rule set. Cache, debug logging, MCP mode, and dynamically loaded external formatters are not supported.
+Rule and plugin configuration is intentionally replaced by the embedded rule set. Cache, debug logging, and dynamically loaded external formatters are not supported.
+
+### Model Context Protocol
+
+`textlint-v8 --mcp` runs a stdio MCP server with `lintFile`, `lintText`,
+`getLintFixedFileContent`, and `getLintFixedTextContent` tools. The tool names
+and inputs match textlint 15.8.0. Results use a stable, LLM-oriented schema with
+per-file diagnostics and summary counts; fix tools include the fixed content and
+never modify files on disk.
 
 ## Rust API
 
