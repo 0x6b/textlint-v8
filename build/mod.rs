@@ -1,4 +1,5 @@
 mod bundle;
+mod docs;
 mod notices;
 mod npm;
 
@@ -10,6 +11,7 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 use bundle::{bundle, generate_registry, rule_packages};
+use docs::write_placeholder_assets;
 use notices::{copy_dictionaries, generate_notices};
 use npm::{DENO_INSTALLER_SOURCE, install_dependencies, prepare_workspace};
 use serde_json::{Value, from_slice};
@@ -21,6 +23,11 @@ pub fn run() -> Result<()> {
         .context("CARGO_MANIFEST_DIR is not set")?;
     let out_dir = var_os("OUT_DIR").map(PathBuf::from).context("OUT_DIR is not set")?;
     let config_path = root.join("textlint-v8.config.json");
+    println!("cargo:rerun-if-env-changed=DOCS_RS");
+    if var_os("DOCS_RS").is_some() {
+        write_placeholder_assets(&out_dir)?;
+        return Ok(());
+    }
     let update_lockfile = match var_os("TEXTLINT_V8_UPDATE_LOCKFILE") {
         None => false,
         Some(value) if value == "1" => true,
