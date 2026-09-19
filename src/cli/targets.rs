@@ -243,8 +243,7 @@ mod tests {
         let ignore_path = temp.0.join("custom/ignore-patterns");
         fs::write(&ignore_path, "nested/**\n").unwrap();
 
-        let actual =
-            resolve_from(std::slice::from_ref(&temp.0), &temp.0, Some(&ignore_path)).unwrap();
+        let actual = resolve_from(from_ref(&temp.0), &temp.0, Some(&ignore_path)).unwrap();
 
         assert_eq!(actual, [canonicalize(kept).unwrap()]);
         assert!(!actual.contains(&canonicalize(ignored).unwrap()));
@@ -255,12 +254,9 @@ mod tests {
         let temp = TempDir::new();
         let document = temp.write("document.md");
 
-        let actual = resolve_from(
-            std::slice::from_ref(&document),
-            &temp.0,
-            Some(&temp.0.join("missing-ignore-file")),
-        )
-        .unwrap();
+        let actual =
+            resolve_from(from_ref(&document), &temp.0, Some(&temp.0.join("missing-ignore-file")))
+                .unwrap();
 
         assert_eq!(actual, [canonicalize(document).unwrap()]);
     }
