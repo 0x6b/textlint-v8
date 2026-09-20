@@ -64,6 +64,37 @@ Rule and plugin configuration is intentionally replaced by the embedded rule set
 
 The HTTP transport validates the `Host` header to prevent DNS rebinding. Loopback listeners allow the standard loopback hosts by default. A non-loopback listener requires one or more repeatable `--mcp-http-allowed-host HOST[:PORT]` arguments. Requests with an `Origin` header are rejected; non-browser MCP clients such as an internal gateway normally omit it. Put authentication and public TLS at the gateway rather than exposing this backend directly.
 
+## Container image
+
+The standalone, non-root image contains only `textlint-v8`, not an authentication proxy or aggregation gateway. Build it for the local architecture with `docker build -t textlint-v8 .`, or build both supported k3s architectures with `docker buildx build --platform linux/amd64,linux/arm64 -t textlint-v8 .`.
+
+The image defaults to stdio mode for compatibility. Override `args` to serve an internal Streamable HTTP backend:
+
+```yaml
+containers:
+  - name: textlint-v8
+    image: textlint-v8
+    args:
+      - --mcp-http
+      - 0.0.0.0:3000
+      - --mcp-http-allowed-host
+      - textlint-v8
+      - --mcp-http-allowed-host
+      - textlint-v8:3000
+    ports:
+      - name: mcp
+        containerPort: 3000
+    readinessProbe:
+      httpGet:
+        path: /healthz
+        port: mcp
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: mcp
+```
+
+The Service name in this example is `textlint-v8`, so the gateway backend URL is `http://textlint-v8:3000/mcp`. If the gateway uses a namespace-qualified or fully qualified Service hostname, pass that exact HTTP `Host` authority (with and without `:3000` if both may be sent) through additional `--mcp-http-allowed-host` arguments. No runtime environment variables are required.
 
 ## Rust API
 
