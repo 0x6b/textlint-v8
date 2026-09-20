@@ -4,7 +4,7 @@
     "npm:@0x6b/textlint-rule-no-emoji@0.4.0": "0.4.0",
     "npm:@0x6b/textlint-rule-no-emphasis@0.1.0": "0.1.0",
     "npm:@0x6b/textlint-rule-no-hr-before-heading@0.1.0": "0.1.0",
-    "npm:@0x6b/textlint-rule-no-numbered-headings-and-bullets@0.2.0": "0.2.0",
+    "npm:@0x6b/textlint-rule-no-numbered-headings-and-bullets@0.2.2": "0.2.2",
     "npm:@0x6b/textlint-rule-no-smart-quotes@0.1.0": "0.1.0",
     "npm:@0x6b/textlint-rule-normalize-whitespaces@1.2.1": "1.2.1",
     "npm:@textlint-ja/textlint-rule-preset-ai-writing@1.7.0": "1.7.0",
@@ -29,8 +29,8 @@
     "@0x6b/textlint-rule-no-hr-before-heading@0.1.0": {
       "integrity": "sha512-p9YX6zEcmNrEk04gEn4o8GFdh2lMk0gCcfKjfwusdTJPbBormnw5MwzWVKGQc+NCKWCfLnqPNtuj+xc1F8UsPQ=="
     },
-    "@0x6b/textlint-rule-no-numbered-headings-and-bullets@0.2.0": {
-      "integrity": "sha512-e+BXC+W00NaQcKLVDjVO0fN514MdJ1dOWXVPa5Tal/htivsya5wLGKpcLHvrpcL7HJiDJXJtXFOI0j/Lx0FgrQ=="
+    "@0x6b/textlint-rule-no-numbered-headings-and-bullets@0.2.2": {
+      "integrity": "sha512-MpiMfb+9NAry7+Wt8Cgik0KFhVtTEIXv0Fw8GSFX4aAAXhjprT72LBp/+sb7fV37dDmPUPz4tX2sl0v2X7tY8Q=="
     },
     "@0x6b/textlint-rule-no-smart-quotes@0.1.0": {
       "integrity": "sha512-S7JXLFJbnU1/49tKxbX47F/kH0rKfdoZAq2AQsOyXEw9QzyTqjQtS4pZoaZguFlWDLWmUErF0482x5OuE0dEdg=="
@@ -2092,7 +2092,7 @@
         "npm:@0x6b/textlint-rule-no-emoji@0.4.0",
         "npm:@0x6b/textlint-rule-no-emphasis@0.1.0",
         "npm:@0x6b/textlint-rule-no-hr-before-heading@0.1.0",
-        "npm:@0x6b/textlint-rule-no-numbered-headings-and-bullets@0.2.0",
+        "npm:@0x6b/textlint-rule-no-numbered-headings-and-bullets@0.2.2",
         "npm:@0x6b/textlint-rule-no-smart-quotes@0.1.0",
         "npm:@0x6b/textlint-rule-normalize-whitespaces@1.2.1",
         "npm:@textlint-ja/textlint-rule-preset-ai-writing@1.7.0",
