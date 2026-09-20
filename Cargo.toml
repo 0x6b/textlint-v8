@@ -1,6 +1,6 @@
 [package]
 name = "textlint-v8"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Standalone textlint runner powered by V8 with an opinionated set of embedded rules"
 license = "MIT"
