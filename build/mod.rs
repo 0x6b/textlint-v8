@@ -10,14 +10,14 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use bundle::{bundle, generate_registry, rule_packages};
+use bundle::{PackageManifest, TextlintConfig, bundle, generate_registry, rule_packages};
 use docs::write_placeholder_assets;
 use notices::{copy_dictionaries, generate_notices};
 use npm::{
     DENO_INSTALLER_SOURCE, install_dependencies, patch_legacy_style_format,
     patch_pluralize_commonjs, prepare_workspace,
 };
-use serde_json::{Value, from_slice};
+use serde_json::from_slice;
 use tokio::runtime::Builder;
 
 pub fn run() -> Result<()> {
@@ -46,12 +46,12 @@ pub fn run() -> Result<()> {
         println!("cargo:rerun-if-changed={path}");
     }
 
-    let config: Value = from_slice(
+    let config: TextlintConfig = from_slice(
         &read(&config_path)
             .with_context(|| format!("read textlint config {}", config_path.display()))?,
     )
     .with_context(|| format!("parse textlint config {}", config_path.display()))?;
-    let manifest: Value = from_slice(
+    let manifest: PackageManifest = from_slice(
         &read(root.join("package.json")).context("read package.json for rule registry")?,
     )
     .context("parse package.json for rule registry")?;

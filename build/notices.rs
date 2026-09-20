@@ -7,7 +7,70 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use serde_json::{Value, from_slice};
+use serde::Deserialize;
+use serde_json::from_slice;
+
+#[derive(Deserialize)]
+struct NpmPackageManifest {
+    name: Option<String>,
+    version: Option<String>,
+    license: Option<LicenseMetadata>,
+    #[serde(default)]
+    licenses: Vec<LicenseMetadata>,
+    author: Option<AuthorMetadata>,
+    repository: Option<RepositoryMetadata>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum LicenseMetadata {
+    Expression(String),
+    Details {
+        #[serde(rename = "type")]
+        kind: Option<String>,
+    },
+}
+
+impl LicenseMetadata {
+    fn into_expression(self) -> Option<String> {
+        match self {
+            Self::Expression(expression) => Some(expression),
+            Self::Details { kind } => kind,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum AuthorMetadata {
+    Name(String),
+    Details { name: Option<String> },
+}
+
+impl AuthorMetadata {
+    fn into_name(self) -> Option<String> {
+        match self {
+            Self::Name(name) => Some(name),
+            Self::Details { name } => name,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RepositoryMetadata {
+    Url(String),
+    Details { url: Option<String> },
+}
+
+impl RepositoryMetadata {
+    fn into_url(self) -> Option<String> {
+        match self {
+            Self::Url(url) => Some(url),
+            Self::Details { url } => url,
+        }
+    }
+}
 
 fn find_package_manifests(directory: &Path, manifests: &mut Vec<PathBuf>) -> Result<()> {
     for entry in read_dir(directory).with_context(|| format!("read {}", directory.display()))? {
@@ -130,26 +193,29 @@ pub fn generate_notices(
     find_package_manifests(&root.join("node_modules/.deno"), &mut manifests)?;
     let mut packages = BTreeMap::new();
     for manifest_path in manifests {
-        let manifest: Value = from_slice(
+        let manifest: NpmPackageManifest = from_slice(
             &read(&manifest_path)
                 .with_context(|| format!("read npm manifest {}", manifest_path.display()))?,
         )
         .with_context(|| format!("parse npm manifest {}", manifest_path.display()))?;
-        let Some(name) = manifest.get("name").and_then(Value::as_str) else {
+        let Some(name) = manifest.name else {
             continue;
         };
-        let Some(version) = manifest.get("version").and_then(Value::as_str) else {
+        let Some(version) = manifest.version else {
             continue;
         };
-        let Some(license) = manifest.get("license").and_then(Value::as_str).or_else(|| {
+        let Some(license) =
             manifest
-                .get("licenses")
-                .and_then(Value::as_array)
-                .and_then(|licenses| licenses.first())
-                .and_then(Value::as_object)
-                .and_then(|license| license.get("type"))
-                .and_then(Value::as_str)
-        }) else {
+                .license
+                .and_then(LicenseMetadata::into_expression)
+                .or_else(|| {
+                    manifest
+                        .licenses
+                        .into_iter()
+                        .next()
+                        .and_then(LicenseMetadata::into_expression)
+                })
+        else {
             continue;
         };
         let package_dir = manifest_path
@@ -163,22 +229,8 @@ pub fn generate_notices(
         {
             continue;
         }
-        let author = manifest.get("author").and_then(|author| {
-            author.as_str().or_else(|| {
-                author
-                    .as_object()
-                    .and_then(|author| author.get("name"))
-                    .and_then(Value::as_str)
-            })
-        });
-        let repository = manifest.get("repository").and_then(|repository| {
-            repository.as_str().or_else(|| {
-                repository
-                    .as_object()
-                    .and_then(|repository| repository.get("url"))
-                    .and_then(Value::as_str)
-            })
-        });
+        let author = manifest.author.and_then(AuthorMetadata::into_name);
+        let repository = manifest.repository.and_then(RepositoryMetadata::into_url);
         let mut attribution = String::new();
         if let Some(author) = author {
             writeln!(attribution, "Author: {author}")?;
@@ -186,8 +238,8 @@ pub fn generate_notices(
         if let Some(repository) = repository {
             writeln!(attribution, "Source: {repository}")?;
         }
-        packages.entry((name.to_owned(), version.to_owned())).or_insert((
-            license.to_owned(),
+        packages.entry((name, version)).or_insert((
+            license,
             package_dir.to_path_buf(),
             attribution,
         ));

@@ -1,5 +1,6 @@
 use std::{
     borrow::Cow,
+    collections::BTreeMap,
     fs::canonicalize,
     io,
     path::{Path, PathBuf},
@@ -17,6 +18,7 @@ use rolldown::{
 };
 use rolldown_common::Output;
 use semver::Version;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, to_string};
 
 const REGISTRY_SPECIFIER: &str = "textlint-v8:registry";
@@ -26,6 +28,23 @@ pub struct RulePackage {
     id: String,
     package: String,
     preset_prefix: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct TextlintConfig {
+    rules: BTreeMap<String, RuleConfig>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum RuleConfig {
+    Enabled(bool),
+    Options(BTreeMap<String, Value>),
+}
+
+#[derive(Deserialize)]
+pub struct PackageManifest {
+    dependencies: BTreeMap<String, String>,
 }
 
 #[derive(Debug)]
@@ -139,25 +158,15 @@ fn package_for_rule_id(rule_id: &str) -> Result<(String, Option<String>)> {
     Ok((package, preset_prefix))
 }
 
-pub fn rule_packages(config: &Value, manifest: &Value) -> Result<Vec<RulePackage>> {
-    let config = config.as_object().context("textlint config must be an object")?;
-    let rules = config
-        .get("rules")
-        .and_then(Value::as_object)
-        .context("textlint config must contain a rules object")?;
-    let dependencies = manifest
-        .as_object()
-        .and_then(|manifest| manifest.get("dependencies"))
-        .and_then(Value::as_object)
-        .context("package.json must contain a dependencies object")?;
-    let mut packages = Vec::with_capacity(rules.len());
+pub fn rule_packages(
+    config: &TextlintConfig,
+    manifest: &PackageManifest,
+) -> Result<Vec<RulePackage>> {
+    let mut packages = Vec::with_capacity(config.rules.len());
 
-    for (rule_id, options) in rules {
-        if !options.is_boolean() && !options.is_object() {
-            bail!("configuration for {rule_id} must be a boolean or object");
-        }
+    for rule_id in config.rules.keys() {
         let (package, preset_prefix) = package_for_rule_id(rule_id)?;
-        let version = dependencies.get(&package).and_then(Value::as_str).with_context(|| {
+        let version = manifest.dependencies.get(&package).with_context(|| {
             format!("textlint rule {rule_id} requires package.json dependency {package}")
         })?;
         Version::parse(version).with_context(|| {
@@ -209,7 +218,11 @@ pub fn generate_registry(packages: &[RulePackage], out_dir: &Path) -> Result<Pat
     Ok(path)
 }
 
-pub async fn bundle(root: &Path, config: &Value, registry_path: &Path) -> Result<BundleOutput> {
+pub async fn bundle(
+    root: &Path,
+    config: &TextlintConfig,
+    registry_path: &Path,
+) -> Result<BundleOutput> {
     let absolute = |path: &str| root.join(path).to_string_lossy().into_owned();
     let dictionary_base_loader =
         canonicalize(root.join("node_modules/kuromoji/src/loader/DictionaryLoader.js"))
