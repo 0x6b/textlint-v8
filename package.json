@@ -14,6 +14,7 @@
     "@textlint-rule/textlint-rule-no-invalid-control-character": "3.0.0",
     "@textlint/kernel": "15.8.0",
     "@textlint/textlint-plugin-markdown": "15.8.0",
+    "textlint-rule-preset-ai-words-ja": "1.2.1",
     "textlint-rule-preset-ja-technical-writing": "12.0.2"
   },
   "devDependencies": {

@@ -65,7 +65,7 @@ When using `textlint-v8` as a library, disable the default `cli` feature:
 
 ```toml
 [dependencies]
-textlint-v8 = { version = "0.1.1", default-features = false }
+textlint-v8 = { version = "0.2.0", default-features = false }
 ```
 
 ```rust
@@ -121,7 +121,7 @@ If an enabled preset includes a rule that is also registered separately, set tha
 
 ## Acknowledgements
 
-This project stands on [textlint](https://github.com/textlint/textlint) and its plugin ecosystem. Thanks to [azu](https://github.com/azu), the textlint maintainers, and the authors and contributors of the [AI writing](https://github.com/textlint-ja/textlint-rule-preset-ai-writing), [Japanese technical writing](https://github.com/textlint-ja/textlint-rule-preset-ja-technical-writing), and [invalid control character](https://github.com/textlint-rule/textlint-rule-no-invalid-control-character) rules.
+This project stands on [textlint](https://github.com/textlint/textlint) and its plugin ecosystem. Thanks to [azu](https://github.com/azu), the textlint maintainers, and the authors and contributors of the [AI writing](https://github.com/textlint-ja/textlint-rule-preset-ai-writing), [Japanese AI words](https://github.com/p1ass/textlint-rule-preset-ai-words-ja), [Japanese technical writing](https://github.com/textlint-ja/textlint-rule-preset-ja-technical-writing), and [invalid control character](https://github.com/textlint-rule/textlint-rule-no-invalid-control-character) rules.
 
 It is also made possible by [Rust](https://www.rust-lang.org/), [V8](https://v8.dev/) and [rusty_v8](https://github.com/denoland/rusty_v8), [Deno](https://github.com/denoland/deno), and [Rolldown](https://github.com/rolldown/rolldown). Thank you to everyone who builds and maintains these projects.
 
