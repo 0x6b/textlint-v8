@@ -1,6 +1,6 @@
 [package]
 name = "textlint-v8"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "Standalone textlint runner powered by V8 with an opinionated set of embedded rules"
 license = "MIT"
@@ -15,24 +15,28 @@ categories = ["command-line-utilities", "development-tools", "text-processing"]
 default = ["cli"]
 cli = [
     "dep:anyhow",
+    "dep:axum",
     "dep:clap",
     "dep:glob",
     "dep:globset",
     "dep:rmcp",
     "dep:tokio",
+    "dep:tokio-util",
 ]
 
 [dependencies]
 anyhow = { version = "1.0.104", optional = true }
+axum = { version = "0.8.9", optional = true }
 clap = { version = "4.6.7", features = ["derive"], optional = true }
 flate2 = "1.1.10"
 glob = { version = "0.3.4", optional = true }
 globset = { version = "0.4.20", optional = true }
-rmcp = { version = "3.4.0", default-features = false, features = ["local", "macros", "server", "transport-io"], optional = true }
+rmcp = { version = "3.4.0", default-features = false, features = ["macros", "server", "transport-io", "transport-streamable-http-server"], optional = true }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 thiserror = "2.0.20"
-tokio = { version = "1.53.1", features = ["rt", "time"], optional = true }
+tokio = { version = "1.53.1", features = ["net", "rt", "signal", "sync", "time"], optional = true }
+tokio-util = { version = "0.7.19", optional = true }
 v8 = "=152.2.0"
 
 [build-dependencies]
