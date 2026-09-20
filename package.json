@@ -5,7 +5,7 @@
     "@0x6b/textlint-rule-no-emoji": "0.4.0",
     "@0x6b/textlint-rule-no-emphasis": "0.1.0",
     "@0x6b/textlint-rule-no-hr-before-heading": "0.1.0",
-    "@0x6b/textlint-rule-no-numbered-headings-and-bullets": "0.2.0",
+    "@0x6b/textlint-rule-no-numbered-headings-and-bullets": "0.2.2",
     "@0x6b/textlint-rule-no-smart-quotes": "0.1.0",
     "@0x6b/textlint-rule-normalize-whitespaces": "1.2.1",
     "@textlint-ja/textlint-rule-preset-ai-writing": "1.7.0",
