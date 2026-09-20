@@ -122,31 +122,32 @@ fn is_always_ignored(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(test)]
-    use std::env::temp_dir;
-    #[cfg(test)]
-    use std::fs::create_dir;
-    #[cfg(test)]
-    use std::fs::create_dir_all;
-    #[cfg(test)]
-    use std::fs::remove_dir_all;
-    #[cfg(test)]
-    use std::slice::from_ref;
-    use std::{fs, time::SystemTime};
+    use std::{
+        env::temp_dir,
+        fs::{self, create_dir, create_dir_all, remove_dir_all},
+        io::ErrorKind,
+        process::id,
+        slice::from_ref,
+        sync::atomic::{AtomicU64, Ordering},
+    };
 
     use super::*;
+
+    static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
 
     struct TempDir(PathBuf);
 
     impl TempDir {
         fn new() -> Self {
-            let unique = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos();
-            let path = temp_dir().join(format!("textlint-v8-{unique}"));
-            create_dir(&path).unwrap();
-            Self(path)
+            loop {
+                let sequence = NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed);
+                let path = temp_dir().join(format!("textlint-v8-{}-{sequence}", id()));
+                match create_dir(&path) {
+                    Ok(()) => return Self(path),
+                    Err(error) if error.kind() == ErrorKind::AlreadyExists => {}
+                    Err(error) => panic!("failed to create {}: {error}", path.display()),
+                }
+            }
         }
 
         fn write(&self, relative: &str) -> PathBuf {
