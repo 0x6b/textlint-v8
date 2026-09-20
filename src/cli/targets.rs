@@ -47,8 +47,10 @@ fn resolve_from(paths: &[PathBuf], cwd: &Path, ignore_path: Option<&Path>) -> Re
         bail!("No files matching the pattern were found")
     }
 
+    let canonical_cwd =
+        canonicalize(cwd).with_context(|| format!("failed to resolve {}", cwd.display()))?;
     let ignores = load_ignores(cwd, ignore_path)?;
-    files.retain(|file| !ignores.is_match(file.strip_prefix(cwd).unwrap_or(file)));
+    files.retain(|file| !ignores.is_match(file.strip_prefix(&canonical_cwd).unwrap_or(file)));
 
     Ok(files.into_iter().collect())
 }
@@ -248,6 +250,23 @@ mod tests {
 
         assert_eq!(actual, [canonicalize(kept).unwrap()]);
         assert!(!actual.contains(&canonicalize(ignored).unwrap()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn applies_ignore_patterns_when_cwd_is_a_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let temp = TempDir::new();
+        let kept = temp.write("actual/kept.md");
+        temp.write("actual/ignored.md");
+        fs::write(temp.0.join("actual/.textlintignore"), "ignored.md\n").unwrap();
+        let alias = temp.0.join("alias");
+        symlink(temp.0.join("actual"), &alias).unwrap();
+
+        let actual = resolve_from(from_ref(&alias), &alias, None).unwrap();
+
+        assert_eq!(actual, [canonicalize(kept).unwrap()]);
     }
 
     #[test]
