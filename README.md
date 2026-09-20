@@ -57,11 +57,7 @@ Rule and plugin configuration is intentionally replaced by the embedded rule set
 
 ### Model Context Protocol
 
-`textlint-v8 --mcp` runs a stdio MCP server with `lintFile`, `lintText`,
-`getLintFixedFileContent`, and `getLintFixedTextContent` tools. The tool names
-and inputs match textlint 15.8.0. Results use a stable, LLM-oriented schema with
-per-file diagnostics and summary counts; fix tools include the fixed content and
-never modify files on disk.
+`textlint-v8 --mcp` runs a stdio MCP server with `lintFile`, `lintText`, `getLintFixedFileContent`, and `getLintFixedTextContent` tools. The tool names and inputs match textlint 15.8.0. Results use a stable, LLM-oriented schema with per-file diagnostics and summary counts; fix tools include the fixed content and never modify files on disk.
 
 ## Rust API
 
@@ -123,12 +119,28 @@ As with standard textlint configuration, each value can be `true`, `false`, or a
 
 If an enabled preset includes a rule that is also registered separately, set that child rule to `false` in the preset. When the same implementation is registered twice, diagnostics use only the rule ID registered first.
 
+## Acknowledgements
+
+This project stands on [textlint](https://github.com/textlint/textlint) and its plugin ecosystem. Thanks to [azu](https://github.com/azu), the textlint maintainers, and the authors and contributors of the [AI writing](https://github.com/textlint-ja/textlint-rule-preset-ai-writing), [Japanese technical writing](https://github.com/textlint-ja/textlint-rule-preset-ja-technical-writing), and [invalid control character](https://github.com/textlint-rule/textlint-rule-no-invalid-control-character) rules.
+
+It is also made possible by [Rust](https://www.rust-lang.org/), [V8](https://v8.dev/) and [rusty_v8](https://github.com/denoland/rusty_v8), [Deno](https://github.com/denoland/deno), and [Rolldown](https://github.com/rolldown/rolldown). Thank you to everyone who builds and maintains these projects.
+
 ## License
 
-The original source code in this repository is licensed under the MIT License.
-See [LICENSE](./LICENSE) for details.
+The original source code in this repository is licensed under the MIT License. See [LICENSE](./LICENSE) for details.
 
-Distributed binaries also contain third-party Rust crates, V8, bundled npm
-packages, and Kuromoji/IPADIC dictionary data under their respective licenses.
-Run `textlint-v8 --licenses` to print the license and attribution notices
-embedded in the binary.
+Distributed binaries also contain third-party Rust crates, V8, bundled npm packages, and Kuromoji/IPADIC dictionary data under their respective licenses. Run `textlint-v8 --licenses` to print the license and attribution notices embedded in the binary.
+
+## Informal Benchmark
+
+These are directional, not scientific, results from a single Linux x86_64 environment. They compare the release binary with Node.js 24.21.0 and textlint 15.8.0 using the same rule configuration and package versions. Runtime measurements used `hyperfine` with a warm-up run; peak memory is the maximum resident set size reported by GNU `time`.
+
+| Workload | `textlint-v8` | Node.js textlint | Speedup | Peak RSS (binary / Node.js) |
+| --- | ---: | ---: | ---: | ---: |
+| One Markdown file | 593 ms | 1,329 ms | 2.24x | 275 MiB / 444 MiB |
+| 100 files, 880 KB, no diagnostics | 8.48 s | 12.02 s | 1.42x | 488 MiB / 804 MiB |
+| 100 files, 898 KB, about 30,000 diagnostics | 12.17 s | 16.73 s | 1.37x | 602 MiB / 910 MiB |
+
+The stripped `textlint-v8` executable was 71 MiB. The equivalent Node.js project's `node_modules` used 127 MiB, excluding the Node.js runtime. Including the 121 MiB Node.js executable raises the minimum runtime footprint to about 248 MiB. Build directories and caches are excluded from both figures.
+
+Actual results depend on the documents, enabled rules, filesystem cache, hardware, and invocation pattern. In particular, reusing a `Textlint` instance through the Rust API avoids paying CLI startup costs for every document.
