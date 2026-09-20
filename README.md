@@ -65,7 +65,7 @@ When using `textlint-v8` as a library, disable the default `cli` feature:
 
 ```toml
 [dependencies]
-textlint-v8 = { version = "0.1.1", default-features = false }
+textlint-v8 = { version = "0.2.0", default-features = false }
 ```
 
 ```rust
