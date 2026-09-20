@@ -132,6 +132,24 @@ pub fn patch_legacy_style_format(root: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn patch_pluralize_commonjs(root: &Path) -> Result<()> {
+    const BEFORE: &str = "typeof require === 'function' && typeof exports === 'object' && typeof module === 'object'";
+    const AFTER: &str = "typeof exports === 'object' && typeof module === 'object'";
+
+    let path = root.join("node_modules/.deno/node_modules/pluralize/pluralize.js");
+    let source = read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    match source.matches(BEFORE).count() {
+        1 => {
+            remove_file(&path).with_context(|| format!("unlink {}", path.display()))?;
+            write(&path, source.replace(BEFORE, AFTER))
+                .with_context(|| format!("patch CommonJS detection in {}", path.display()))?;
+        }
+        0 if source.matches(AFTER).count() == 1 => {}
+        _ => bail!("pluralize changed; expected its CommonJS environment check"),
+    }
+    Ok(())
+}
+
 fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
     create_dir_all(destination).with_context(|| format!("create {}", destination.display()))?;
     for entry in read_dir(source).with_context(|| format!("read {}", source.display()))? {
