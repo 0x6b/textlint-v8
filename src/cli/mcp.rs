@@ -1,24 +1,47 @@
-use std::{cell::RefCell, fmt::Display, fs::read_to_string, path::PathBuf, rc::Rc};
+use std::{
+    fmt::Display,
+    fs::read_to_string,
+    net::SocketAddr,
+    path::PathBuf,
+    sync::mpsc::{Receiver, Sender, channel},
+    thread,
+};
 
-use anyhow::{Context as _, Error, Result};
+use anyhow::{Context as _, Error, Result, bail};
+use axum::{Router, http::StatusCode, routing::get, serve};
 use rmcp::{
     ServerHandler, ServiceExt as _,
     handler::server::{tool::schema_for_output, wrapper::Parameters},
     model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig},
     schemars::{self, JsonSchema},
     tool, tool_handler, tool_router,
-    transport::stdio,
+    transport::{
+        stdio,
+        streamable_http_server::{
+            StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
+        },
+    },
 };
 use serde::{Deserialize, Serialize};
 use serde_json::to_value;
 use textlint_v8::{FixResult, LintMessage, LintResult, Textlint};
-use tokio::{runtime::Builder, task::LocalSet};
+use tokio::{net::TcpListener, runtime::Builder, select, sync::oneshot};
+use tokio_util::sync::CancellationToken;
 
 use super::targets::resolve;
 
 #[derive(Clone)]
 struct Server {
-    textlint: Rc<RefCell<Textlint>>,
+    worker: Sender<WorkerRequest>,
+}
+
+type WorkerResponse = Result<CallToolResult, String>;
+
+enum WorkerRequest {
+    LintFile(FileInput, oneshot::Sender<WorkerResponse>),
+    LintText(TextInput, oneshot::Sender<WorkerResponse>),
+    FixFile(FileInput, oneshot::Sender<WorkerResponse>),
+    FixText(TextInput, oneshot::Sender<WorkerResponse>),
 }
 
 /// Markdown targets to process with the embedded textlint rules.
@@ -93,8 +116,31 @@ struct Summary {
 
 #[tool_router]
 impl Server {
-    fn new() -> textlint_v8::Result<Self> {
-        Ok(Self { textlint: Rc::new(RefCell::new(Textlint::new()?)) })
+    fn new() -> Result<Self> {
+        let (worker, requests) = channel();
+        let (ready, initialized) = channel();
+        thread::Builder::new()
+            .name("textlint-v8-mcp".to_owned())
+            .spawn(move || run_worker(requests, &ready))
+            .context("spawn textlint MCP worker")?;
+        initialized
+            .recv()
+            .context("textlint MCP worker stopped during initialization")?
+            .map_err(Error::msg)?;
+        Ok(Self { worker })
+    }
+
+    async fn request(
+        &self,
+        request: impl FnOnce(oneshot::Sender<WorkerResponse>) -> WorkerRequest,
+    ) -> WorkerResponse {
+        let (response, receiver) = oneshot::channel();
+        self.worker
+            .send(request(response))
+            .map_err(|_| "textlint MCP worker is unavailable".to_owned())?;
+        receiver
+            .await
+            .map_err(|_| "textlint MCP worker stopped before responding".to_owned())?
     }
 
     #[tool(
@@ -103,18 +149,12 @@ impl Server {
         output_schema = schema_for_output::<ToolOutput>(),
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
-    fn lint_file(
+    async fn lint_file(
         &self,
-        Parameters(FileInput { file_paths }): Parameters<FileInput>,
+        Parameters(input): Parameters<FileInput>,
     ) -> Result<CallToolResult, String> {
-        let documents = read_files(&file_paths).map_err(display_error)?;
-        let mut textlint = self.textlint.borrow_mut();
-        let results = documents
-            .iter()
-            .map(|(path, text)| textlint.lint(text, path))
-            .collect::<textlint_v8::Result<Vec<_>>>()
-            .map_err(display_error)?;
-        Ok(lint_result(results))
+        self.request(|response| WorkerRequest::LintFile(input, response))
+            .await
     }
 
     #[tool(
@@ -123,16 +163,12 @@ impl Server {
         output_schema = schema_for_output::<ToolOutput>(),
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
-    fn lint_text(
+    async fn lint_text(
         &self,
-        Parameters(TextInput { text, stdin_filename }): Parameters<TextInput>,
+        Parameters(input): Parameters<TextInput>,
     ) -> Result<CallToolResult, String> {
-        let result = self
-            .textlint
-            .borrow_mut()
-            .lint(&text, &stdin_filename)
-            .map_err(display_error)?;
-        Ok(lint_result(vec![result]))
+        self.request(|response| WorkerRequest::LintText(input, response))
+            .await
     }
 
     #[tool(
@@ -141,18 +177,11 @@ impl Server {
         output_schema = schema_for_output::<ToolOutput>(),
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
-    fn fix_file(
+    async fn fix_file(
         &self,
-        Parameters(FileInput { file_paths }): Parameters<FileInput>,
+        Parameters(input): Parameters<FileInput>,
     ) -> Result<CallToolResult, String> {
-        let documents = read_files(&file_paths).map_err(display_error)?;
-        let mut textlint = self.textlint.borrow_mut();
-        let results = documents
-            .iter()
-            .map(|(path, text)| textlint.fix(text, path))
-            .collect::<textlint_v8::Result<Vec<_>>>()
-            .map_err(display_error)?;
-        Ok(fix_result(results))
+        self.request(|response| WorkerRequest::FixFile(input, response)).await
     }
 
     #[tool(
@@ -161,16 +190,11 @@ impl Server {
         output_schema = schema_for_output::<ToolOutput>(),
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
-    fn fix_text(
+    async fn fix_text(
         &self,
-        Parameters(TextInput { text, stdin_filename }): Parameters<TextInput>,
+        Parameters(input): Parameters<TextInput>,
     ) -> Result<CallToolResult, String> {
-        let result = self
-            .textlint
-            .borrow_mut()
-            .fix(&text, &stdin_filename)
-            .map_err(display_error)?;
-        Ok(fix_result(vec![result]))
+        self.request(|response| WorkerRequest::FixText(input, response)).await
     }
 }
 
@@ -187,11 +211,122 @@ impl ServerHandler for Server {
 
 pub(super) fn run() -> Result<u8> {
     let runtime = Builder::new_current_thread().enable_time().build()?;
-    LocalSet::new().block_on(&runtime, async {
+    runtime.block_on(async {
         Server::new()?.serve(stdio()).await?.waiting().await?;
         Ok::<_, Error>(())
     })?;
     Ok(0)
+}
+
+pub(super) fn run_http(address: SocketAddr, allowed_hosts: Vec<String>) -> Result<u8> {
+    if !address.ip().is_loopback() && allowed_hosts.is_empty() {
+        bail!("--mcp-http-allowed-host is required for a non-loopback MCP HTTP listener");
+    }
+
+    let runtime = Builder::new_current_thread().enable_all().build()?;
+    runtime.block_on(async move {
+        let server = Server::new()?;
+        let cancellation = CancellationToken::new();
+        let mut config = StreamableHttpServerConfig::default()
+            .enforce_origin_validation()
+            .with_cancellation_token(cancellation.child_token());
+        if !allowed_hosts.is_empty() {
+            config = config.with_allowed_hosts(allowed_hosts);
+        }
+        let service = StreamableHttpService::new(
+            move || Ok(server.clone()),
+            LocalSessionManager::default().into(),
+            config,
+        );
+        let router = Router::new()
+            .route("/healthz", get(|| async { StatusCode::OK }))
+            .nest_service("/mcp", service);
+        let listener = TcpListener::bind(address)
+            .await
+            .with_context(|| format!("bind MCP HTTP listener to {address}"))?;
+        eprintln!("textlint-v8 MCP server listening on http://{address}/mcp");
+        serve(listener, router)
+            .with_graceful_shutdown(shutdown(cancellation))
+            .await
+            .context("serve MCP HTTP")?;
+        Ok::<_, Error>(())
+    })?;
+    Ok(0)
+}
+
+async fn shutdown(cancellation: CancellationToken) {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+
+        let mut terminate = signal(SignalKind::terminate()).expect("install SIGTERM handler");
+        select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = terminate.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        use tokio::signal::ctrl_c;
+
+        let _ = ctrl_c().await;
+    }
+    cancellation.cancel();
+}
+
+fn run_worker(requests: Receiver<WorkerRequest>, ready: &Sender<Result<(), String>>) {
+    let mut textlint = match Textlint::new() {
+        Ok(textlint) => {
+            let _ = ready.send(Ok(()));
+            textlint
+        }
+        Err(error) => {
+            let _ = ready.send(Err(error.to_string()));
+            return;
+        }
+    };
+    for request in requests {
+        match request {
+            WorkerRequest::LintFile(FileInput { file_paths }, response) => {
+                let result = read_files(&file_paths)
+                    .and_then(|documents| {
+                        documents
+                            .iter()
+                            .map(|(path, text)| textlint.lint(text, path).map_err(Error::from))
+                            .collect::<Result<Vec<_>>>()
+                    })
+                    .map(lint_result)
+                    .map_err(display_error);
+                let _ = response.send(result);
+            }
+            WorkerRequest::LintText(TextInput { text, stdin_filename }, response) => {
+                let result = textlint
+                    .lint(&text, &stdin_filename)
+                    .map(|result| lint_result(vec![result]))
+                    .map_err(display_error);
+                let _ = response.send(result);
+            }
+            WorkerRequest::FixFile(FileInput { file_paths }, response) => {
+                let result = read_files(&file_paths)
+                    .and_then(|documents| {
+                        documents
+                            .iter()
+                            .map(|(path, text)| textlint.fix(text, path).map_err(Error::from))
+                            .collect::<Result<Vec<_>>>()
+                    })
+                    .map(fix_result)
+                    .map_err(display_error);
+                let _ = response.send(result);
+            }
+            WorkerRequest::FixText(TextInput { text, stdin_filename }, response) => {
+                let result = textlint
+                    .fix(&text, &stdin_filename)
+                    .map(|result| fix_result(vec![result]))
+                    .map_err(display_error);
+                let _ = response.send(result);
+            }
+        }
+    }
 }
 
 fn read_files(file_paths: &[PathBuf]) -> Result<Vec<(String, String)>> {
@@ -306,34 +441,42 @@ mod tests {
 
     #[test]
     fn returns_structured_results_without_modifying_fixed_files() {
-        let server = Server::new().unwrap();
-        let lint = server
-            .lint_text(Parameters(TextInput {
-                text: "本文 😀。".to_owned(),
-                stdin_filename: "sample.md".to_owned(),
-            }))
-            .unwrap();
-        let lint = lint.structured_content.unwrap();
-        assert_eq!(lint["files"][0]["path"], "sample.md");
-        assert!(lint["summary"]["diagnosticCount"].as_u64().unwrap() > 0);
-
-        let unique = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
+        Builder::new_current_thread()
+            .enable_all()
+            .build()
             .unwrap()
-            .as_nanos();
-        let path = temp_dir().join(format!("textlint-v8-mcp-{unique}.md"));
-        let original = "特殊　空白。";
-        write(&path, original).unwrap();
+            .block_on(async {
+                let server = Server::new().unwrap();
+                let lint = server
+                    .lint_text(Parameters(TextInput {
+                        text: "本文 😀。".to_owned(),
+                        stdin_filename: "sample.md".to_owned(),
+                    }))
+                    .await
+                    .unwrap();
+                let lint = lint.structured_content.unwrap();
+                assert_eq!(lint["files"][0]["path"], "sample.md");
+                assert!(lint["summary"]["diagnosticCount"].as_u64().unwrap() > 0);
 
-        let fixed = server
-            .fix_file(Parameters(FileInput { file_paths: vec![path.clone()] }))
-            .unwrap()
-            .structured_content
-            .unwrap();
-        assert_eq!(fixed["files"][0]["output"], "特殊 空白。");
-        assert_eq!(fixed["summary"]["appliedFixCount"], 1);
-        assert_eq!(read_to_string(&path).unwrap(), original);
+                let unique = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos();
+                let path = temp_dir().join(format!("textlint-v8-mcp-{unique}.md"));
+                let original = "特殊　空白。";
+                write(&path, original).unwrap();
 
-        remove_file(path).unwrap();
+                let fixed = server
+                    .fix_file(Parameters(FileInput { file_paths: vec![path.clone()] }))
+                    .await
+                    .unwrap()
+                    .structured_content
+                    .unwrap();
+                assert_eq!(fixed["files"][0]["output"], "特殊 空白。");
+                assert_eq!(fixed["summary"]["appliedFixCount"], 1);
+                assert_eq!(read_to_string(&path).unwrap(), original);
+
+                remove_file(path).unwrap();
+            });
     }
 }

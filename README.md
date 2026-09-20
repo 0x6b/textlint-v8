@@ -45,6 +45,9 @@ textlint-v8 --licenses
 
 # Run the Model Context Protocol server over stdio
 textlint-v8 --mcp
+
+# Run the Model Context Protocol server over Streamable HTTP
+textlint-v8 --mcp-http 127.0.0.1:3000
 ```
 
 Lint formatters are `checkstyle`, `compact`, `github`, `jslint-xml`, `json`, `junit`, `pretty-error`, `stylish` (default), `table`, `tap`, and `unix`. Fix formatters are `compats`, `diff`, `fixed-result`, `json`, and `stylish` (default). With files, `--fix` writes changes back unless `--dry-run` is set.
@@ -57,7 +60,10 @@ Rule and plugin configuration is intentionally replaced by the embedded rule set
 
 ### Model Context Protocol
 
-`textlint-v8 --mcp` runs a stdio MCP server with `lintFile`, `lintText`, `getLintFixedFileContent`, and `getLintFixedTextContent` tools. The tool names and inputs match textlint 15.8.0. Results use a stable, LLM-oriented schema with per-file diagnostics and summary counts; fix tools include the fixed content and never modify files on disk.
+`textlint-v8 --mcp` runs a stdio MCP server with `lintFile`, `lintText`, `getLintFixedFileContent`, and `getLintFixedTextContent` tools. `--mcp-http ADDRESS` serves the same tools using Streamable HTTP at `/mcp`; `/healthz` is an unauthenticated health check. The tool names and inputs match textlint 15.8.0. Results use a stable, LLM-oriented schema with per-file diagnostics and summary counts; fix tools include the fixed content and never modify files on disk.
+
+The HTTP transport validates the `Host` header to prevent DNS rebinding. Loopback listeners allow the standard loopback hosts by default. A non-loopback listener requires one or more repeatable `--mcp-http-allowed-host HOST[:PORT]` arguments. Requests with an `Origin` header are rejected; non-browser MCP clients such as an internal gateway normally omit it. Put authentication and public TLS at the gateway rather than exposing this backend directly.
+
 
 ## Rust API
 

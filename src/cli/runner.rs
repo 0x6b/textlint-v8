@@ -8,7 +8,7 @@ use anyhow::{Context as _, Result, bail};
 use clap::{CommandFactory as _, Parser as _};
 use textlint_v8::{FixResult, LintMessage, LintResult, Textlint, third_party_notices};
 
-use super::{mcp, options::Args, targets::resolve};
+use super::{mcp, mcp::run_http, options::Args, targets::resolve};
 
 struct Document {
     text: String,
@@ -20,6 +20,9 @@ pub(crate) fn run() -> Result<u8> {
     let args = Args::parse();
     if args.mcp {
         return mcp::run();
+    }
+    if let Some(address) = args.mcp_http {
+        return run_http(address, args.mcp_http_allowed_host);
     }
     if args.licenses {
         stdout().write_all(third_party_notices().as_bytes())?;

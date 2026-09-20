@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{net::SocketAddr, path::PathBuf};
 
 use clap::Parser;
 
@@ -13,6 +13,20 @@ pub(super) struct Args {
     pub(super) version: Option<bool>,
     #[arg(long, exclusive = true, help = "Run a Model Context Protocol server over stdio")]
     pub(super) mcp: bool,
+    #[arg(
+        long,
+        value_name = "address",
+        conflicts_with = "mcp",
+        help = "Run a Streamable HTTP MCP server"
+    )]
+    pub(super) mcp_http: Option<SocketAddr>,
+    #[arg(
+        long,
+        value_name = "host[:port]",
+        requires = "mcp_http",
+        help = "Allow a Host authority for Streamable HTTP (repeatable)"
+    )]
+    pub(super) mcp_http_allowed_host: Vec<String>,
     #[arg(long, alias = "third-party-licenses", conflicts_with = "paths")]
     pub(super) licenses: bool,
     #[arg(long)]
