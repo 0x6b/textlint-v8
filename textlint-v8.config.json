@@ -10,6 +10,7 @@
     "@0x6b/normalize-whitespaces": true,
     "@textlint-ja/preset-ai-writing": true,
     "@textlint-rule/no-invalid-control-character": true,
+    "preset-ai-words-ja": true,
     "preset-ja-technical-writing": {
       "no-invalid-control-character": false
     }

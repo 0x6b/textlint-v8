@@ -8,12 +8,13 @@
     "npm:@0x6b/textlint-rule-no-smart-quotes@0.1.0": "0.1.0",
     "npm:@0x6b/textlint-rule-normalize-whitespaces@1.2.1": "1.2.1",
     "npm:@textlint-ja/textlint-rule-preset-ai-writing@1.7.0": "1.7.0",
-    "npm:@textlint/fixer-formatter@15.8.0": "15.8.0",
     "npm:@textlint-rule/textlint-rule-no-invalid-control-character@3.0.0": "3.0.0",
+    "npm:@textlint/fixer-formatter@15.8.0": "15.8.0",
     "npm:@textlint/kernel@15.8.0": "15.8.0",
     "npm:@textlint/linter-formatter@15.8.0": "15.8.0",
     "npm:@textlint/textlint-plugin-markdown@15.8.0": "15.8.0",
     "npm:kuromoji@0.1.2": "0.1.2",
+    "npm:textlint-rule-preset-ai-words-ja@1.2.1": "1.2.1",
     "npm:textlint-rule-preset-ja-technical-writing@12.0.2": "12.0.2"
   },
   "npm": {
@@ -161,6 +162,19 @@
     "@textlint/feature-flag@15.8.0": {
       "integrity": "sha512-qvk6DV9lazH9EVHGLglvO9LwJbi22yy2LdZDQNH4EvlGk5+cNxbV1yZzuLdk+7elOuK2Lb9l5geMpZPa/j11XQ=="
     },
+    "@textlint/fixer-formatter@15.8.0": {
+      "integrity": "sha512-/Lwo9E6Kvltb/cYsOCKvBwVRz4GZ8CLgOVNTDRdyYVtXE6EGk5utCPCdzjEm1h3C6bdXcnoArGvgyhlFw7AsUg==",
+      "dependencies": [
+        "@textlint/module-interop@15.8.0",
+        "@textlint/resolver",
+        "@textlint/types@15.8.0",
+        "debug",
+        "diff",
+        "string-width",
+        "strip-ansi",
+        "text-table"
+      ]
+    },
     "@textlint/kernel@13.4.1": {
       "integrity": "sha512-r2sUhjPysFjl2Ax37x9AfWkJM8jgKN0bL4SX3xRzOukdcj69Dst5On5qBZtULaVMX1LDkwkdxA6ZEADmq27qQA==",
       "dependencies": [
@@ -189,19 +203,6 @@
         "debug",
         "fast-equals",
         "structured-source"
-      ]
-    },
-    "@textlint/fixer-formatter@15.8.0": {
-      "integrity": "sha512-/Lwo9E6Kvltb/cYsOCKvBwVRz4GZ8CLgOVNTDRdyYVtXE6EGk5utCPCdzjEm1h3C6bdXcnoArGvgyhlFw7AsUg==",
-      "dependencies": [
-        "@textlint/module-interop@15.8.0",
-        "@textlint/resolver",
-        "@textlint/types@15.8.0",
-        "debug",
-        "diff@8.0.4",
-        "string-width",
-        "strip-ansi",
-        "text-table"
       ]
     },
     "@textlint/linter-formatter@15.8.0": {
@@ -545,9 +546,6 @@
         "is-descriptor",
         "isobject"
       ]
-    },
-    "diff@4.0.4": {
-      "integrity": "sha512-X07nttJQkwkfKfvTPG/KSnE2OMdcUCao6+eXF3wmnIQRn2aPAHH3VxDbDOdegkd6JbPsXqShpvEOHfAT+nCNwQ=="
     },
     "diff@8.0.4": {
       "integrity": "sha512-DPi0FmjiSU5EvQV0++GFDOJ9ASQUVFh5kD+OzOnYdi7n3Wpm9hWWGfB/O2blfHcMVTL5WkQXSnRiK9makhrcnw=="
@@ -1783,6 +1781,13 @@
     "textlint-rule-no-zero-width-spaces@1.0.1": {
       "integrity": "sha512-AkxpzBILGB4YsXddzHx2xqpXmqMv5Yd+PQm4anUV+ADSJuwLP1Jd6yHf/LOtu9j3ps8K3XM9vQrXRK73z0bU3A=="
     },
+    "textlint-rule-preset-ai-words-ja@1.2.1": {
+      "integrity": "sha512-yTXyIn+3QvtTBffSqLAJoGfhCNkR6hjTlGbOJ6vnlN9/qhtqMWOo69DyYeDj7WVWjlljgxbadFkLQd6winGb1w==",
+      "dependencies": [
+        "kuromojin",
+        "morpheme-match-textlint"
+      ]
+    },
     "textlint-rule-preset-ja-technical-writing@12.0.2": {
       "integrity": "sha512-BBVY6oA5V799k5wRfP+gCpDHsp6vWjWX2UT+/KLlAFFsNdmRB8Z6qyOnqiOjfzmLGIRgoMcPI1dXj5upOqnD6Q==",
       "dependencies": [
@@ -2097,10 +2102,12 @@
         "npm:@0x6b/textlint-rule-normalize-whitespaces@1.2.1",
         "npm:@textlint-ja/textlint-rule-preset-ai-writing@1.7.0",
         "npm:@textlint-rule/textlint-rule-no-invalid-control-character@3.0.0",
+        "npm:@textlint/fixer-formatter@15.8.0",
         "npm:@textlint/kernel@15.8.0",
         "npm:@textlint/linter-formatter@15.8.0",
         "npm:@textlint/textlint-plugin-markdown@15.8.0",
         "npm:kuromoji@0.1.2",
+        "npm:textlint-rule-preset-ai-words-ja@1.2.1",
         "npm:textlint-rule-preset-ja-technical-writing@12.0.2"
       ]
     }
