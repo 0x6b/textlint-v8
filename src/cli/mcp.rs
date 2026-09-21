@@ -68,17 +68,23 @@ struct TextInput {
 #[derive(Debug, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ToolOutput {
+    /// Results for each Markdown file that was processed.
     files: Vec<FileOutput>,
+    /// Aggregate diagnostic and fix counts across all processed files.
     summary: Summary,
 }
 
 #[derive(Debug, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct FileOutput {
+    /// The file path, or the supplied stdin filename for in-memory text.
     path: String,
+    /// Lint diagnostics, or diagnostics that remain after automatic fixes.
     diagnostics: Vec<Diagnostic>,
+    /// The complete fixed Markdown content. Present only for fix tools.
     #[serde(skip_serializing_if = "Option::is_none")]
     output: Option<String>,
+    /// The number of automatic fixes applied. Present only for fix tools.
     #[serde(skip_serializing_if = "Option::is_none")]
     applied_fix_count: Option<usize>,
 }
@@ -86,12 +92,19 @@ struct FileOutput {
 #[derive(Debug, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Diagnostic {
+    /// The textlint rule that reported the diagnostic.
     rule_id: String,
+    /// The diagnostic severity.
     severity: Severity,
+    /// A human-readable explanation of the problem.
     message: String,
+    /// One-based line number where the problem starts.
     line: usize,
+    /// One-based column number where the problem starts.
     column: usize,
+    /// One-based line number where the problem ends.
     end_line: usize,
+    /// One-based column number where the problem ends.
     end_column: usize,
 }
 
@@ -106,11 +119,17 @@ enum Severity {
 #[derive(Debug, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Summary {
+    /// The number of files processed.
     file_count: usize,
+    /// The total number of diagnostics returned.
     diagnostic_count: usize,
+    /// The number of error diagnostics returned.
     error_count: usize,
+    /// The number of warning diagnostics returned.
     warning_count: usize,
+    /// The number of informational diagnostics returned.
     info_count: usize,
+    /// The total number of automatic fixes applied.
     applied_fix_count: usize,
 }
 
@@ -145,7 +164,7 @@ impl Server {
 
     #[tool(
         name = "lintFile",
-        description = "Lint Markdown files, directories, or glob patterns with the embedded textlint rules",
+        description = "Check Markdown files for writing problems using textlint-v8's embedded rules. Pass one or more file paths, directories, or glob patterns; directories are searched recursively and .textlintignore is honored. This tool reads files but never modifies them. Use lintText instead for Markdown already available as text.",
         output_schema = schema_for_output::<ToolOutput>(),
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
@@ -159,7 +178,7 @@ impl Server {
 
     #[tool(
         name = "lintText",
-        description = "Lint Markdown text with the embedded textlint rules",
+        description = "Check in-memory Markdown text for writing problems using textlint-v8's embedded rules. Pass the complete Markdown source and a filename used to identify it in diagnostics. Use lintFile instead when the content should be read from files on disk.",
         output_schema = schema_for_output::<ToolOutput>(),
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
@@ -173,7 +192,7 @@ impl Server {
 
     #[tool(
         name = "getLintFixedFileContent",
-        description = "Return fixed Markdown file content without modifying files on disk",
+        description = "Apply available automatic textlint fixes to Markdown files and return the complete fixed content. Pass one or more file paths, directories, or glob patterns; directories are searched recursively and .textlintignore is honored. Files on disk are never modified. Diagnostics contain only problems that remain after fixing.",
         output_schema = schema_for_output::<ToolOutput>(),
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
@@ -186,7 +205,7 @@ impl Server {
 
     #[tool(
         name = "getLintFixedTextContent",
-        description = "Return fixed Markdown text using the embedded textlint rules",
+        description = "Apply available automatic textlint fixes to in-memory Markdown and return the complete fixed content. Pass the complete Markdown source and a filename used to identify it in diagnostics. Diagnostics contain only problems that remain after fixing.",
         output_schema = schema_for_output::<ToolOutput>(),
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
@@ -204,7 +223,7 @@ impl ServerHandler for Server {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")))
             .with_instructions(
-                "Lint and fix Markdown using textlint-v8's fixed embedded rules. Fix tools never modify files on disk.",
+                "Use lintFile or lintText to check Markdown for writing problems with textlint-v8's fixed embedded rules. Use getLintFixedFileContent or getLintFixedTextContent when you need automatically corrected Markdown; these tools return the complete corrected content and never modify files on disk. Choose a File tool for paths, directories, or glob patterns, and a Text tool when the Markdown is already available in memory.",
             )
     }
 }
@@ -438,6 +457,43 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn advertises_detailed_tool_descriptions_and_schemas() {
+        let tools = Server::tool_router().list_all();
+
+        assert_eq!(tools.len(), 4);
+        for tool in tools {
+            let description = tool.description.as_deref().unwrap();
+            match tool.name.as_ref() {
+                "lintFile" => assert!(description.contains("never modifies")),
+                "lintText" => assert!(description.contains("in-memory Markdown")),
+                "getLintFixedFileContent" => {
+                    assert!(description.contains("never modified"));
+                    assert!(description.contains("remain after fixing"));
+                }
+                "getLintFixedTextContent" => {
+                    assert!(description.contains("remain after fixing"));
+                }
+                name => panic!("unexpected tool {name}"),
+            }
+
+            let input_schema = to_value(&tool.input_schema).unwrap();
+            assert!(
+                input_schema["properties"]
+                    .as_object()
+                    .unwrap()
+                    .values()
+                    .all(|property| property["description"].is_string()),
+                "{} has an undocumented input property",
+                tool.name
+            );
+
+            let output_schema = to_value(tool.output_schema.as_ref().unwrap()).unwrap();
+            assert!(output_schema["properties"]["files"]["description"].is_string());
+            assert!(output_schema["properties"]["summary"]["description"].is_string());
+        }
+    }
 
     #[test]
     fn returns_structured_results_without_modifying_fixed_files() {
