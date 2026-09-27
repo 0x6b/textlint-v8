@@ -31,13 +31,13 @@ clap = { version = "4.6.7", features = ["derive"], optional = true }
 flate2 = "1.1.10"
 glob = { version = "0.3.4", optional = true }
 globset = { version = "0.4.20", optional = true }
-rmcp = { version = "3.4.0", default-features = false, features = ["macros", "server", "transport-io", "transport-streamable-http-server"], optional = true }
+rmcp = { version = "3.4.1", default-features = false, features = ["macros", "server", "transport-io", "transport-streamable-http-server"], optional = true }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-thiserror = "2.0.20"
+thiserror = "2.0.21"
 tokio = { version = "1.53.1", features = ["net", "rt", "signal", "sync", "time"], optional = true }
 tokio-util = { version = "0.7.19", optional = true }
-v8 = "=152.2.0"
+v8 = "152.2.0"
 
 [build-dependencies]
 anyhow = "1.0.104"
@@ -49,12 +49,12 @@ deno_npm_installer = "0.54.0"
 deno_npmrc = "0.20.0"
 deno_resolver = "0.90.0"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
-rolldown = { version = "=1.2.9", default-features = false }
-rolldown_common = { version = "=1.2.9", default-features = false }
+rolldown = { version = "1.2.11", default-features = false }
+rolldown_common = { version = "1.2.11", default-features = false }
 semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-sys_traits = "0.1.28"
+sys_traits = "0.1.29"
 tokio = { version = "1.53.1", features = ["rt"] }
 url = "2.5.8"
 
