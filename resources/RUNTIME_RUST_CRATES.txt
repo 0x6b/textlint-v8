@@ -1,5 +1,5 @@
 # Runtime dependency closure for the versions fixed by Cargo.lock.
-# Update this list when Cargo.lock changes, using cargo tree --edges normal.
+# Update this list when Cargo.lock changes, using cargo tree --no-default-features --edges normal.
 adler2 2.0.1
 bitflags 2.13.2
 calendrical_calculations 0.2.4
@@ -34,15 +34,15 @@ serde_core 1.0.229
 serde_derive 1.0.229
 serde_json 1.0.151
 simd-adler32 0.3.10
-smallvec 1.16.1
+smallvec 1.16.2
 stable_deref_trait 1.2.1
 strck 1.0.0
 syn 3.0.6
 synstructure 0.14.0
 temporal_capi 0.2.6
 temporal_rs 0.2.6
-thiserror 2.0.20
-thiserror-impl 2.0.20
+thiserror 2.0.21
+thiserror-impl 2.0.21
 timezone_provider 0.2.6
 tinystr 0.8.4
 unicode-ident 1.0.26
