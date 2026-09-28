@@ -133,12 +133,7 @@ To add or change the embedded rules, fork this repository and follow these steps
    cargo build --locked
    ```
 
-   `textlint-v8.lock` records the exact npm versions, dependency edges, tarball URLs, and
-   integrity hashes selected by the Rust build. Normal builds install that frozen graph
-   directly and never perform version resolution or run lifecycle scripts.
-   The built-in resolver intentionally supports only registry packages and the semver
-   dependency specifications used by the current graph; unsupported specifications fail
-   explicitly instead of falling back to an external package manager.
+   `textlint-v8.lock` records the exact npm versions, dependency edges, tarball URLs, and integrity hashes selected by the Rust build. Normal builds install that frozen graph directly and never perform version resolution or run lifecycle scripts. The built-in resolver intentionally supports only registry packages and the semver dependency specifications used by the current graph; unsupported specifications fail explicitly instead of falling back to an external package manager.
 
 4. If the package uses Node APIs, add only the required functionality to `js/shim/` and the Rolldown aliases. For rules that use morphological analysis, check whether the existing Kuromoji bridge is sufficient.
 5. Check formatting, linting, tests, and the generated bundle.
