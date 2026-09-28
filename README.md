@@ -133,6 +133,8 @@ To add or change the embedded rules, fork this repository and follow these steps
    cargo build --locked
    ```
 
+   `textlint-v8.lock` records the exact npm versions, dependency edges, tarball URLs, and integrity hashes selected by the Rust build. Normal builds install that frozen graph directly and never perform version resolution or run lifecycle scripts. The built-in resolver intentionally supports only registry packages and the semver dependency specifications used by the current graph; unsupported specifications fail explicitly instead of falling back to an external package manager.
+
 4. If the package uses Node APIs, add only the required functionality to `js/shim/` and the Rolldown aliases. For rules that use morphological analysis, check whether the existing Kuromoji bridge is sufficient.
 5. Check formatting, linting, tests, and the generated bundle.
 
@@ -160,7 +162,7 @@ If an enabled preset includes a rule that is also registered separately, set tha
 
 This project stands on [textlint](https://github.com/textlint/textlint) and its plugin ecosystem. Thanks to [azu](https://github.com/azu), the textlint maintainers, and the authors and contributors of the [AI writing](https://github.com/textlint-ja/textlint-rule-preset-ai-writing), [Japanese AI words](https://github.com/p1ass/textlint-rule-preset-ai-words-ja), [Japanese technical writing](https://github.com/textlint-ja/textlint-rule-preset-ja-technical-writing), and [invalid control character](https://github.com/textlint-rule/textlint-rule-no-invalid-control-character) rules.
 
-It is also made possible by [Rust](https://www.rust-lang.org/), [V8](https://v8.dev/) and [rusty_v8](https://github.com/denoland/rusty_v8), [Deno](https://github.com/denoland/deno), and [Rolldown](https://github.com/rolldown/rolldown). Thank you to everyone who builds and maintains these projects.
+It is also made possible by [Rust](https://www.rust-lang.org/), [V8](https://v8.dev/) and [rusty_v8](https://github.com/denoland/rusty_v8), and [Rolldown](https://github.com/rolldown/rolldown). Thank you to everyone who builds and maintains these projects.
 
 ## License
 
