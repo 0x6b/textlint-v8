@@ -2,6 +2,7 @@ mod bundle;
 mod docs;
 mod notices;
 mod npm;
+mod resolver;
 
 use std::{
     env::var_os,
@@ -14,8 +15,7 @@ use bundle::{PackageManifest, TextlintConfig, bundle, generate_registry, rule_pa
 use docs::write_placeholder_assets;
 use notices::{copy_dictionaries, generate_notices};
 use npm::{
-    DENO_INSTALLER_SOURCE, install_dependencies, patch_legacy_style_format,
-    patch_pluralize_commonjs, prepare_workspace,
+    install_dependencies, patch_legacy_style_format, patch_pluralize_commonjs, prepare_workspace,
 };
 use serde_json::from_slice;
 use tokio::runtime::Builder;
@@ -41,7 +41,7 @@ pub fn run() -> Result<()> {
     };
 
     println!("cargo:rerun-if-env-changed=TEXTLINT_V8_UPDATE_LOCKFILE");
-    for path in ["build", "package.json", "deno.lock", "textlint-v8.config.json", "js", "resources"]
+    for path in ["build", "package.json", "textlint-v8.lock", "textlint-v8.config.json", "js", "resources"]
     {
         println!("cargo:rerun-if-changed={path}");
     }
@@ -71,13 +71,13 @@ pub fn run() -> Result<()> {
     })?;
 
     if update_lockfile {
-        copy(workspace.join("deno.lock"), root.join("deno.lock"))
-            .context("copy explicitly updated Deno lockfile to the source tree")?;
+        copy(workspace.join("textlint-v8.lock"), root.join("textlint-v8.lock"))
+            .context("copy explicitly updated npm lockfile to the source tree")?;
     }
     copy_dictionaries(&workspace, &out_dir)?;
     generate_notices(&workspace, &root, &out_dir, &bundle.module_ids)?;
     let output = out_dir.join("textlint-v8.js");
     write(&output, bundle.bytes).with_context(|| format!("write {}", output.display()))?;
-    println!("cargo:warning=npm dependencies installed with {DENO_INSTALLER_SOURCE}");
+    println!("cargo:warning=npm dependencies installed from textlint-v8.lock");
     Ok(())
 }

@@ -190,7 +190,7 @@ pub fn generate_notices(
     module_ids: &[PathBuf],
 ) -> Result<()> {
     let mut manifests = Vec::new();
-    find_package_manifests(&root.join("node_modules/.deno"), &mut manifests)?;
+    find_package_manifests(&root.join("node_modules"), &mut manifests)?;
     let mut packages = BTreeMap::new();
     for manifest_path in manifests {
         let manifest: NpmPackageManifest = from_slice(
@@ -247,7 +247,7 @@ pub fn generate_notices(
     for module_id in module_ids {
         if module_id
             .components()
-            .any(|component| component.as_os_str() == ".deno")
+            .any(|component| component.as_os_str() == "node_modules")
             && !packages.values().any(|(_, package_dir, _)| {
                 module_id.starts_with(package_dir)
                     || canonicalize(package_dir)
