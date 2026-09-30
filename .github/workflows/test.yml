@@ -1,0 +1,27 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  packaged-install:
+    name: Install packaged crate with clean Cargo home (ARM64)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Package crate
+        run: cargo package --locked --no-verify
+
+      - name: Install packaged crate
+        run: |
+          crate_version="$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "textlint-v8") | .version')"
+          tar -xzf "target/package/textlint-v8-$crate_version.crate" -C target/package
+          clean_cargo_home="$(mktemp -d)"
+          CARGO_HOME="$clean_cargo_home" cargo install --locked --path "target/package/textlint-v8-$crate_version"

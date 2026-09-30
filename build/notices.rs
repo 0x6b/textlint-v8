@@ -116,9 +116,12 @@ fn append_rust_inventory(
                 break;
             }
         }
-        let package_dir = package_dir.with_context(|| {
-            format!("runtime Rust crate source is unavailable: {name} {version}")
-        })?;
+        let Some(package_dir) = package_dir else {
+            // Cargo does not download sources for target-specific dependencies that are
+            // unused on the current target. The inventories cover every target, so omit
+            // those crates from the notices generated for this build.
+            continue;
+        };
         let mut license_files = Vec::new();
         for entry in read_dir(&package_dir)
             .with_context(|| format!("read Rust crate {}", package_dir.display()))?
