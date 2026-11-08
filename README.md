@@ -10,9 +10,9 @@ It runs textlint for Markdown on V8 and provides both a CLI and Rust API. Rules 
 cargo install textlint-v8
 ```
 
-### npm / npx (not published yet)
+### npm / npx
 
-The npm distribution is prepared but has **not been published**. After publication, it will support:
+Run with npx or install globally:
 
 ```console
 npx @0x6b/textlint-v8 document.md
@@ -22,7 +22,7 @@ npm install --global @0x6b/textlint-v8
 
 npm installs a prebuilt native binary using platform-specific optional dependencies. There are no install scripts or additional binary downloads. Node.js 18 or newer is required only for the npm launcher; linting still runs in the standalone binary. Direct binary and Cargo installations do not require Node.js.
 
-Initial npm targets are Linux x64/ARM64 (glibc, built on Ubuntu 24.04), macOS ARM64 (Apple Silicon), and Windows x64/ARM64 (MSVC, static CRT). Intel Macs and Alpine Linux/musl are not supported by these packages. Keep npm optional dependencies enabled.
+Supported npm targets are Linux x64/ARM64 (glibc, built on Ubuntu 24.04), macOS ARM64 (Apple Silicon), and Windows x64/ARM64 (MSVC, static CRT). Intel Macs and Alpine Linux/musl are not supported by these packages. Keep npm optional dependencies enabled.
 
 The packaging scripts and launcher template live in `build/`. Packaging is a separate step after the Cargo build, so normal Cargo builds do not require Node.js. To generate packages locally, build the native binary, then run the following with the matching platform (`linux-x64`, `linux-arm64`, `darwin-arm64`, `win32-x64`, or `win32-arm64`):
 
@@ -36,7 +36,7 @@ TEXTLINT_V8_BINARY=target/release/textlint-v8 node --test build/package.test.mjs
 
 For Windows x64 packages, build with `cargo build --release --locked --target x86_64-pc-windows-msvc` and set `CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS` to `-C target-feature=+crt-static`, as the CI workflow does. For Windows ARM64, use target `aarch64-pc-windows-msvc` and `CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_RUSTFLAGS` instead. Pass `target/<target>/release/textlint-v8.exe` to the packaging script and set `TEXTLINT_V8_BINARY` to that path when testing, using a matching native Node.js architecture. The generated native package includes `bin/textlint-v8.exe`; npm creates the Windows command shim for the launcher. CI builds and tests Windows ARM64 on the native `windows-11-arm` runner.
 
-Package versions and exact native dependency versions come from `Cargo.toml`. The separate root `package.json` remains private and is used only to build the embedded rules. The `Build npm packages` workflow builds and tests each native target and uploads npm tarballs on pull requests, pushes to `main`, version tags, or manual runs; it never publishes them. Before a future publication, verify package-name availability and publish all native packages before the launcher.
+Package versions and exact native dependency versions come from `Cargo.toml`. The separate root `package.json` remains private and is used only to build the embedded rules. The `Build npm packages` workflow builds and tests each native target and uploads npm tarballs on pull requests, pushes to `main`, version tags, or manual runs; it never publishes them. When publishing, publish all native packages before the launcher.
 
 ## Build
 
