@@ -1,0 +1,78 @@
+name: Build npm packages (no publishing)
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-x64
+            binary: target/release/textlint-v8
+          - runner: ubuntu-24.04-arm
+            platform: linux-arm64
+            binary: target/release/textlint-v8
+          - runner: macos-15
+            platform: darwin-arm64
+            binary: target/release/textlint-v8
+          - runner: windows-2025
+            platform: win32-x64
+            target: x86_64-pc-windows-msvc
+            binary: target/x86_64-pc-windows-msvc/release/textlint-v8.exe
+          - runner: windows-11-arm
+            platform: win32-arm64
+            target: aarch64-pc-windows-msvc
+            binary: target/aarch64-pc-windows-msvc/release/textlint-v8.exe
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          architecture: ${{ endsWith(matrix.platform, 'arm64') && 'arm64' || 'x64' }}
+
+      - name: Build native binary
+        if: runner.os != 'Windows'
+        run: cargo build --release --locked
+
+      - name: Build Windows native binary with static CRT
+        if: runner.os == 'Windows'
+        run: |
+          rustup target add '${{ matrix.target }}'
+          cargo build --release --locked --target '${{ matrix.target }}'
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+          CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+
+      - name: Test packed install and npx
+        run: node --test build/package.test.mjs
+        env:
+          TEXTLINT_V8_BINARY: ${{ matrix.binary }}
+
+      - name: Pack distribution artifacts
+        run: |
+          node build/package.mjs '${{ matrix.platform }}' '${{ matrix.binary }}' target/npm
+          mkdir -p target/npm-tarballs
+          npm pack ./target/npm/textlint-v8 --pack-destination target/npm-tarballs --ignore-scripts
+          npm pack './target/npm/textlint-v8-${{ matrix.platform }}' --pack-destination target/npm-tarballs --ignore-scripts
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: npm-${{ matrix.platform }}
+          path: target/npm-tarballs/*.tgz
+          if-no-files-found: error
