@@ -71,7 +71,9 @@ impl Plugin for TextlintBundlePlugin {
     ) -> HookResolveIdReturn {
         if (args.specifier.ends_with("NodeDictionaryLoader")
             || args.specifier.ends_with("NodeDictionaryLoader.js"))
-            && args.importer.is_some_and(|importer| importer.contains("/kuromoji/"))
+            && args.importer.is_some_and(|importer| {
+                importer.contains("/kuromoji/") || importer.contains("\\kuromoji\\")
+            })
         {
             return Ok(Some(HookResolveIdOutput::from_id(self.dictionary_loader.clone())));
         }
