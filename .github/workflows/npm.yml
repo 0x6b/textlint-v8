@@ -1,4 +1,4 @@
-name: Build npm packages (no publishing)
+name: Build npm packages
 
 on:
   workflow_dispatch:
