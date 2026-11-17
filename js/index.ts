@@ -164,6 +164,7 @@ function format(requestJson: string, formatters: Record<string, Formatter>): str
     formatter(request.results as never[], {
       formatterName: request.formatterName,
       color: request.color,
+      getSource: (filePath: string) => globalThis.__textlintV8Files.get(filePath),
     }),
   );
 }

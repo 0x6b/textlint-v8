@@ -309,7 +309,7 @@ pub async fn bundle(
         .keys
         .iter()
         .zip(&chunk.modules.values)
-        .filter(|(_, module)| module.rendered_length() > 0)
+        .filter(|(_, module)| module.rendered_byte_length() > 0)
         .map(|(module_id, _)| Path::new(module_id.as_str()))
         .filter(|path| path.exists())
         .map(canonicalize)

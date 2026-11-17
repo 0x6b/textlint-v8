@@ -54,13 +54,13 @@ Lint formatters are `checkstyle`, `compact`, `github`, `jslint-xml`, `json`, `ju
 
 ### CLI compatibility
 
-`textlint-v8` supports textlint 15.8.0's normal file, directory, glob, stdin, ignore, fix, formatter, and output workflows. `--experimental` is accepted as a compatibility no-op.
+`textlint-v8` embeds textlint 16.1.1 and supports normal file, directory, glob, stdin, ignore, fix, formatter, and output workflows. `--experimental` is accepted as a compatibility no-op.
 
 Rule and plugin configuration is intentionally replaced by the embedded rule set. Cache, debug logging, and dynamically loaded external formatters are not supported.
 
 ### Model Context Protocol
 
-`textlint-v8 --mcp` runs a stdio MCP server with `lintFile`, `lintText`, `getLintFixedFileContent`, and `getLintFixedTextContent` tools. `--mcp-http ADDRESS` serves the same tools using Streamable HTTP at `/mcp`; `/healthz` is an unauthenticated health check. The tool names and inputs match textlint 15.8.0. Results use a stable, LLM-oriented schema with per-file diagnostics and summary counts; fix tools include the fixed content and never modify files on disk.
+`textlint-v8 --mcp` runs a stdio MCP server with `lintFile`, `lintText`, `getLintFixedFileContent`, and `getLintFixedTextContent` tools. `--mcp-http ADDRESS` serves the same tools using Streamable HTTP at `/mcp`; `/healthz` is an unauthenticated health check. File tools accept paths; text tools accept inline content. Results use a stable, LLM-oriented schema with per-file diagnostics and summary counts; fix tools include the fixed content and never modify files on disk.
 
 The HTTP transport validates the `Host` header to prevent DNS rebinding. Loopback listeners allow the standard loopback hosts by default. A non-loopback listener requires one or more repeatable `--mcp-http-allowed-host HOST[:PORT]` arguments. Requests with an `Origin` header are rejected; non-browser MCP clients such as an internal gateway normally omit it. Put authentication and public TLS at the gateway rather than exposing this backend directly.
 

@@ -54,10 +54,24 @@ fn fixes_text_and_formats_results() {
             .any(|message| message.rule_id == "@0x6b/normalize-whitespaces")
     );
 
+    let diff = textlint
+        .format_fix_results_with_color(std::slice::from_ref(&fixed), "diff", false)
+        .unwrap();
+    assert!(diff.contains("- 特殊　空白"));
+    assert!(diff.contains("+ 特殊 空白"));
+    assert!(!diff.contains('\u{1b}'));
+
     let json = textlint.format_fix_results(&[fixed], "json").unwrap();
     assert!(json.contains("\"output\":\"特殊 空白\""));
 
     let lint = textlint.lint("本文 😀", "sample.md").unwrap();
+    let pretty = textlint
+        .format_lint_results_with_color(std::slice::from_ref(&lint), "pretty-error", false)
+        .unwrap();
+    assert!(pretty.contains("本文 😀"));
+    assert!(pretty.contains("@0x6b/no-emoji"));
+    assert!(!pretty.contains('\u{1b}'));
+
     let stylish = textlint.format_lint_results(&[lint], "stylish").unwrap();
     assert!(stylish.contains("@0x6b/no-emoji"));
 }
@@ -66,7 +80,7 @@ fn fixes_text_and_formats_results() {
 fn embeds_third_party_notices() {
     let notices = third_party_notices();
     assert!(notices.contains("kuromoji 0.1.2"));
-    assert!(notices.contains("@textlint/kernel 15.8.0"));
+    assert!(notices.contains("@textlint/kernel 16.1.1"));
     assert!(notices.contains("textlint-rule-preset-ai-words-ja 1.2.1"));
     assert!(notices.contains("mecab-ipadic-2.7.0-20070801"));
 }

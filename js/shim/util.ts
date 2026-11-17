@@ -1,3 +1,7 @@
+import stripAnsi from "strip-ansi";
+
+export const stripVTControlCharacters = stripAnsi;
+
 const codes: Record<string, number> = {
   bold: 1,
   underline: 4,
@@ -12,4 +16,4 @@ export function styleText(format: string | string[], text: string): string {
   return `\x1b[${formats.map((value) => codes[value]).join(";")}m${text}\x1b[0m`;
 }
 
-export default { styleText };
+export default { styleText, stripVTControlCharacters };
