@@ -1,9 +1,7 @@
 use std::{
     collections::BTreeMap,
     fmt::Write as _,
-    fs::{
-        copy, create_dir_all, read, read_dir, read_to_string, remove_dir_all, remove_file, write,
-    },
+    fs::{copy, create_dir_all, read, read_dir, remove_dir_all, write},
     path::{Component, Path, PathBuf},
 };
 
@@ -276,39 +274,6 @@ pub async fn install_dependencies(root: &Path, update_lockfile: bool) -> Result<
     for (name, id) in &preferred {
         let destination = root.join("node_modules").join(package_path(name)?);
         materialize_package(&lock, &cache_dir, id, &destination, &preferred)?;
-    }
-    Ok(())
-}
-
-pub fn patch_legacy_style_format(root: &Path) -> Result<()> {
-    let path = root.join("node_modules/@azu/style-format/ansi-codes.js");
-    let source = read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    match source.matches("\\033").count() {
-        44 => {
-            remove_file(&path).with_context(|| format!("unlink {}", path.display()))?;
-            write(&path, source.replace("\\033", "\\x1b"))
-                .with_context(|| format!("patch legacy escapes in {}", path.display()))?;
-        }
-        0 if source.matches("\\x1b").count() == 44 => {}
-        _ => bail!("@azu/style-format changed; expected 44 ANSI escape sequences"),
-    }
-    Ok(())
-}
-
-pub fn patch_pluralize_commonjs(root: &Path) -> Result<()> {
-    const BEFORE: &str = "typeof require === 'function' && typeof exports === 'object' && typeof module === 'object'";
-    const AFTER: &str = "typeof exports === 'object' && typeof module === 'object'";
-
-    let path = root.join("node_modules/pluralize/pluralize.js");
-    let source = read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    match source.matches(BEFORE).count() {
-        1 => {
-            remove_file(&path).with_context(|| format!("unlink {}", path.display()))?;
-            write(&path, source.replace(BEFORE, AFTER))
-                .with_context(|| format!("patch CommonJS detection in {}", path.display()))?;
-        }
-        0 if source.matches(AFTER).count() == 1 => {}
-        _ => bail!("pluralize changed; expected its CommonJS environment check"),
     }
     Ok(())
 }

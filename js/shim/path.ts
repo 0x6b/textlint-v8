@@ -30,4 +30,4 @@ export function dirname(value: string): string {
   return parts.join("/") || ".";
 }
 
-export default { dirname, join, normalize, resolve, sep: "/" };
+export default { dirname, join, normalize, resolve };

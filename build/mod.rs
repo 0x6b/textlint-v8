@@ -14,9 +14,7 @@ use anyhow::{Context, Result, bail};
 use bundle::{PackageManifest, TextlintConfig, bundle, generate_registry, rule_packages};
 use docs::write_placeholder_assets;
 use notices::{copy_dictionaries, generate_notices};
-use npm::{
-    install_dependencies, patch_legacy_style_format, patch_pluralize_commonjs, prepare_workspace,
-};
+use npm::{install_dependencies, prepare_workspace};
 use serde_json::from_slice;
 use tokio::runtime::Builder;
 
@@ -65,8 +63,6 @@ pub fn run() -> Result<()> {
         .context("create build runtime")?;
     let bundle = runtime.block_on(async {
         install_dependencies(&workspace, update_lockfile).await?;
-        patch_legacy_style_format(&workspace)?;
-        patch_pluralize_commonjs(&workspace)?;
         bundle(&workspace, &config, &registry_path).await
     })?;
 
