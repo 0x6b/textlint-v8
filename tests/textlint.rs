@@ -82,7 +82,7 @@ fn embeds_third_party_notices() {
     assert!(notices.contains("kuromojin 3.1.0 (MIT AND Apache-2.0)"));
     assert!(notices.contains("[kuromojin/src/analyzer/LICENSE-2.0.txt]"));
     assert!(notices.contains("Copyright 2014 Takuya Asano"));
-    assert!(notices.contains("@textlint/kernel 16.1.1"));
+    assert!(notices.contains("@textlint/kernel 16.1.2"));
     assert!(notices.contains("textlint-rule-preset-ai-words-ja 1.2.1"));
     assert!(notices.contains("mecab-ipadic-2.7.0-20070801"));
 }
