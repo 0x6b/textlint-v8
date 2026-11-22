@@ -85,5 +85,5 @@ POSSIBILITY OF SUCH DAMAGE.
 Apache License 2.0
 ------------------
 
-The complete Apache License, Version 2.0 is included below in the Kuromoji
-dictionary section of this notice.
+The complete Apache License, Version 2.0 is included below in the
+Kuromojin Analyzer and Dictionary section of this notice.

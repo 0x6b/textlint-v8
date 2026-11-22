@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{from_str, to_string};
 use v8::{
     ArrayBuffer, Context, ContextScope, CreateParams, Exception, Function,
-    FunctionCallbackArguments, Global, Isolate, Local, MicrotasksPolicy, Object, OwnedIsolate,
-    PinScope, Promise, PromiseState, ReturnValue, Script, V8, Value, new_default_platform,
-    tc_scope,
+    FunctionCallbackArguments, Global, Isolate, Local, MicrotasksPolicy, NewStringType, Object,
+    OwnedIsolate, PinScope, Promise, PromiseState, ReturnValue, Script,
+    TYPED_ARRAY_MAX_SIZE_IN_HEAP, Uint8Array, V8, Value, new_default_platform, tc_scope,
 };
 
 use crate::{
@@ -20,9 +20,14 @@ use crate::{
 };
 
 const TEXTLINT_BUNDLE: &str = include_str!(concat!(env!("OUT_DIR"), "/textlint-v8.js"));
+const KUROMOJIN_DICTIONARY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/kuromojin.dict"));
 const V8_PRELUDE: &str = r"
 globalThis.console = {
   log() {}, debug() {}, info() {}, warn() {}, error() {}
+};
+// Kuromojin only uses the default, non-streaming UTF-8 decoder on Uint8Array views.
+globalThis.TextDecoder = class {
+  decode(bytes) { return __decodeUtf8(bytes); }
 };
 ";
 static V8_INIT: Once = Once::new();
@@ -62,28 +67,9 @@ struct V8State {
     isolate: OwnedIsolate,
 }
 
-macro_rules! dictionary {
-    ($filename:literal) => {
-        include_bytes!(concat!(env!("OUT_DIR"), "/kuromoji/", $filename))
-    };
-}
-
-fn compressed_dictionary(filename: &str) -> Option<&'static [u8]> {
-    match filename {
-        "base.dat.gz" => Some(dictionary!("base.dat.gz")),
-        "check.dat.gz" => Some(dictionary!("check.dat.gz")),
-        "tid.dat.gz" => Some(dictionary!("tid.dat.gz")),
-        "tid_pos.dat.gz" => Some(dictionary!("tid_pos.dat.gz")),
-        "tid_map.dat.gz" => Some(dictionary!("tid_map.dat.gz")),
-        "cc.dat.gz" => Some(dictionary!("cc.dat.gz")),
-        "unk.dat.gz" => Some(dictionary!("unk.dat.gz")),
-        "unk_pos.dat.gz" => Some(dictionary!("unk_pos.dat.gz")),
-        "unk_map.dat.gz" => Some(dictionary!("unk_map.dat.gz")),
-        "unk_char.dat.gz" => Some(dictionary!("unk_char.dat.gz")),
-        "unk_compat.dat.gz" => Some(dictionary!("unk_compat.dat.gz")),
-        "unk_invoke.dat.gz" => Some(dictionary!("unk_invoke.dat.gz")),
-        _ => None,
-    }
+fn array_buffer<'s>(scope: &PinScope<'s, '_>, bytes: Vec<u8>) -> Local<'s, ArrayBuffer> {
+    let store = ArrayBuffer::new_backing_store_from_vec(bytes).make_shared();
+    ArrayBuffer::with_backing_store(scope, &store)
 }
 
 fn throw_error(scope: &mut PinScope, message: &str) {
@@ -96,26 +82,45 @@ fn throw_error(scope: &mut PinScope, message: &str) {
     clippy::needless_pass_by_value,
     reason = "V8's function callback API requires these wrapper arguments by value"
 )]
-fn load_dictionary(
+fn load_dictionary(scope: &mut PinScope, _: FunctionCallbackArguments, mut result: ReturnValue) {
+    result.set(array_buffer(scope, KUROMOJIN_DICTIONARY.to_vec()).into());
+}
+
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "V8's function callback API requires these wrapper arguments by value"
+)]
+fn gunzip_dictionary_part(
     scope: &mut PinScope,
     args: FunctionCallbackArguments,
     mut return_value: ReturnValue,
 ) {
-    let filename = args.get(0).to_rust_string_lossy(scope);
-    let Some(compressed) = compressed_dictionary(&filename) else {
-        throw_error(scope, &format!("unknown dictionary file: {filename}"));
-        return;
-    };
-
-    let mut decoded = Vec::new();
-    if let Err(error) = GzDecoder::new(compressed).read_to_end(&mut decoded) {
-        throw_error(scope, &format!("failed to decompress {filename}: {error}"));
+    let bytes =
+        Local::<Uint8Array>::try_from(args.get(0)).expect("dictionary part is a Uint8Array");
+    let mut storage = [0; TYPED_ARRAY_MAX_SIZE_IN_HEAP];
+    let raw_length = args.get(1).uint32_value(scope).unwrap_or_default() as usize;
+    let mut decoded = Vec::with_capacity(raw_length);
+    if let Err(error) = GzDecoder::new(bytes.get_contents(&mut storage)).read_to_end(&mut decoded) {
+        throw_error(scope, &format!("Kuromojin dictionary decompression failed: {error}"));
         return;
     }
+    return_value.set(array_buffer(scope, decoded).into());
+}
 
-    let store = ArrayBuffer::new_backing_store_from_vec(decoded).make_shared();
-    let buffer = ArrayBuffer::with_backing_store(scope, &store);
-    return_value.set(buffer.into());
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "V8's function callback API requires these wrapper arguments by value"
+)]
+fn decode_utf8(scope: &mut PinScope, args: FunctionCallbackArguments, mut result: ReturnValue) {
+    let bytes = Local::<Uint8Array>::try_from(args.get(0)).expect("decoder input is a Uint8Array");
+    let mut storage = [0; TYPED_ARRAY_MAX_SIZE_IN_HEAP];
+    let bytes = bytes.get_contents(&mut storage);
+    let bytes = bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(bytes);
+    if let Some(value) = v8::String::new_from_utf8(scope, bytes, NewStringType::Normal) {
+        result.set(value.into());
+    } else {
+        throw_error(scope, "decoded string is too long");
+    }
 }
 
 fn v8_error(
@@ -189,27 +194,23 @@ impl Textlint {
             let context = Context::new(scope, Default::default());
             let scope = &mut ContextScope::new(scope, context);
 
-            let loader = Function::new(scope, load_dictionary).ok_or_else(|| Error::V8 {
-                operation: "create the dictionary loader",
-                message: "V8 returned no function".to_owned(),
-                stack: None,
-            })?;
-            let loader_name =
-                v8::String::new(scope, "__loadKuromojiDictionary").ok_or_else(|| Error::V8 {
-                    operation: "allocate the dictionary loader name",
-                    message: "V8 returned no string".to_owned(),
-                    stack: None,
-                })?;
-            if !context
-                .global(scope)
-                .set(scope, loader_name.into(), loader.into())
-                .unwrap_or(false)
-            {
-                return Err(Error::V8 {
-                    operation: "install the dictionary loader",
-                    message: "V8 rejected the global property".to_owned(),
-                    stack: None,
-                });
+            for (name, function) in [
+                ("__loadKuromojinDictionary", Function::new(scope, load_dictionary)),
+                ("__gunzipKuromojinDictionaryPart", Function::new(scope, gunzip_dictionary_part)),
+                ("__decodeUtf8", Function::new(scope, decode_utf8)),
+            ] {
+                let installed = v8::String::new(scope, name)
+                    .zip(function)
+                    .and_then(|(key, function)| {
+                        context.global(scope).set(scope, key.into(), function.into())
+                    });
+                if installed != Some(true) {
+                    return Err(Error::V8 {
+                        operation: "install a dictionary bridge function",
+                        message: format!("V8 could not install {name}"),
+                        stack: None,
+                    });
+                }
             }
 
             run_script(scope, V8_PRELUDE, "evaluate the V8 prelude")?;

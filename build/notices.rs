@@ -2,7 +2,7 @@ use std::{
     collections::BTreeMap,
     env::var_os,
     fmt::Write as _,
-    fs::{canonicalize, copy, create_dir_all, read, read_dir, remove_dir_all, write},
+    fs::{canonicalize, read, read_dir, write},
     path::{Path, PathBuf},
 };
 
@@ -313,47 +313,16 @@ pub fn generate_notices(
             }
         }
     }
-    notices.push_str(
-        "\nKUROMOJI DICTIONARY\n===================\n\n--- kuromoji 0.1.2 / LICENSE-2.0.txt ---\n",
-    );
-    notices.push_str(
-        &String::from_utf8(read(source_root.join("resources/kuromoji/LICENSE-2.0.txt"))?)
-            .context("Kuromoji license is not UTF-8")?,
-    );
-    notices.push_str("\n--- kuromoji 0.1.2 / NOTICE.md ---\n");
-    notices.push_str(
-        &String::from_utf8(read(source_root.join("resources/kuromoji/NOTICE.md"))?)
-            .context("Kuromoji notice is not UTF-8")?,
-    );
+    notices.push_str("\nKUROMOJIN ANALYZER AND DICTIONARY\n=================================\n");
+    let kuromojin = root.join("node_modules/kuromojin");
+    for name in ["src/analyzer/LICENSE-2.0.txt", "src/analyzer/NOTICE.md", "dict/NOTICE.md"] {
+        writeln!(notices, "\n[kuromojin/{name}]")?;
+        notices.push_str(
+            &String::from_utf8(read(kuromojin.join(name))?)
+                .with_context(|| format!("Kuromojin {name} is not UTF-8"))?,
+        );
+    }
     write(out_dir.join("THIRD_PARTY_NOTICES.txt"), notices)
         .context("write embedded third-party notices")?;
-    Ok(())
-}
-
-pub fn copy_dictionaries(root: &Path, out_dir: &Path) -> Result<()> {
-    let source_dir = root.join("node_modules/kuromoji/dict");
-    let output_dir = out_dir.join("kuromoji");
-    if output_dir.exists() {
-        remove_dir_all(&output_dir).with_context(|| format!("remove {}", output_dir.display()))?;
-    }
-    create_dir_all(&output_dir).with_context(|| format!("create {}", output_dir.display()))?;
-
-    let mut copied = 0;
-    for entry in read_dir(&source_dir)
-        .with_context(|| format!("read Kuromoji dictionaries from {}", source_dir.display()))?
-    {
-        let entry = entry.context("read Kuromoji dictionary entry")?;
-        let source = entry.path();
-        if source.extension().is_none_or(|extension| extension != "gz") {
-            continue;
-        }
-        let output = output_dir.join(entry.file_name());
-        copy(&source, &output)
-            .with_context(|| format!("copy {} to {}", source.display(), output.display()))?;
-        copied += 1;
-    }
-    if copied == 0 {
-        bail!("no Kuromoji dictionaries found in {}", source_dir.display());
-    }
     Ok(())
 }

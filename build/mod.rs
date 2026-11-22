@@ -13,7 +13,7 @@ use std::{
 use anyhow::{Context, Result, bail};
 use bundle::{PackageManifest, TextlintConfig, bundle, generate_registry, rule_packages};
 use docs::write_placeholder_assets;
-use notices::{copy_dictionaries, generate_notices};
+use notices::generate_notices;
 use npm::{install_dependencies, prepare_workspace};
 use serde_json::from_slice;
 use tokio::runtime::Builder;
@@ -70,7 +70,11 @@ pub fn run() -> Result<()> {
         copy(workspace.join("textlint-v8.lock"), root.join("textlint-v8.lock"))
             .context("copy explicitly updated npm lockfile to the source tree")?;
     }
-    copy_dictionaries(&workspace, &out_dir)?;
+    copy(
+        workspace.join("node_modules/kuromojin/dict/kuromojin.dict"),
+        out_dir.join("kuromojin.dict"),
+    )
+    .context("copy the Kuromojin dictionary into the build output")?;
     generate_notices(&workspace, &root, &out_dir, &bundle.module_ids)?;
     let output = out_dir.join("textlint-v8.js");
     write(&output, bundle.bytes).with_context(|| format!("write {}", output.display()))?;

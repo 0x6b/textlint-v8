@@ -11,9 +11,8 @@ use rolldown::{
     Bundler, BundlerOptions, BundlerTransformOptions, CodeSplittingMode, Either, InputItem,
     OutputFormat, Platform, ResolveOptions,
     plugin::{
-        HookResolveIdArgs, HookResolveIdOutput, HookResolveIdReturn, HookTransformArgs,
-        HookTransformOutput, HookTransformOutputMap, HookTransformReturn, HookUsage, Plugin,
-        PluginContext, SharedTransformPluginContext,
+        HookResolveIdArgs, HookResolveIdOutput, HookResolveIdReturn, HookUsage, Plugin,
+        PluginContext,
     },
 };
 use rolldown_common::Output;
@@ -49,9 +48,7 @@ pub struct PackageManifest {
 
 #[derive(Debug)]
 struct TextlintBundlePlugin {
-    dictionary_loader: String,
-    dictionary_base_loader: String,
-    conjunctive_particle_rule: String,
+    dictionary_platform: String,
 }
 
 pub struct BundleOutput {
@@ -69,64 +66,19 @@ impl Plugin for TextlintBundlePlugin {
         _ctx: &PluginContext,
         args: &HookResolveIdArgs<'_>,
     ) -> HookResolveIdReturn {
-        if (args.specifier.ends_with("NodeDictionaryLoader")
-            || args.specifier.ends_with("NodeDictionaryLoader.js"))
-            && args.importer.is_some_and(|importer| {
-                importer.contains("/kuromoji/") || importer.contains("\\kuromoji\\")
-            })
-        {
-            return Ok(Some(HookResolveIdOutput::from_id(self.dictionary_loader.clone())));
-        }
-        if args.specifier == "kuromoji/src/loader/DictionaryLoader.js"
-            && args.importer == Some(self.dictionary_loader.as_str())
-        {
-            return Ok(Some(HookResolveIdOutput::from_id(self.dictionary_base_loader.clone())));
-        }
-        Ok(None)
-    }
-
-    async fn transform(
-        &self,
-        _ctx: SharedTransformPluginContext,
-        args: &HookTransformArgs<'_>,
-    ) -> HookTransformReturn {
-        if args.id != self.conjunctive_particle_rule {
-            return Ok(None);
-        }
-
-        let mut source = args.code.to_string();
-        for (before, after) in [
-            (
-                "return (0, _kuromojin.getTokenizer)().then(tokenizer => {\n        var checkSentence = sentence => {",
-                "var checkSentence = async sentence => {",
-            ),
-            (
-                "var tokens = tokenizer.tokenizeForSentence(sentenceText);",
-                "var tokens = await (0, _kuromojin.tokenize)(sentenceText);",
-            ),
-            (
-                "        sentences.forEach(checkSentence);\n      });",
-                "        return Promise.all(sentences.map(checkSentence));",
-            ),
-        ] {
-            if source.matches(before).count() != 1 {
-                bail!(
-                    "textlint-rule-no-doubled-conjunctive-particle-ga changed; \
-                     expected cache patch source exactly once"
-                );
-            }
-            source = source.replacen(before, after, 1);
-        }
-
-        Ok(Some(HookTransformOutput {
-            code: Some(source),
-            map: HookTransformOutputMap::Null,
-            ..Default::default()
-        }))
+        let importer = match args.specifier {
+            "./platform" => "node_modules/kuromojin/lib/analyzer/loader/loadDictionary.js",
+            "./defaultDictionaryPath" => "node_modules/kuromojin/lib/kuromojin.js",
+            _ => return Ok(None),
+        };
+        Ok(args
+            .importer
+            .is_some_and(|id| Path::new(id).ends_with(importer))
+            .then(|| HookResolveIdOutput::from_id(self.dictionary_platform.clone())))
     }
 
     fn register_hook_usage(&self) -> HookUsage {
-        HookUsage::ResolveId | HookUsage::Transform
+        HookUsage::ResolveId
     }
 }
 
@@ -226,11 +178,6 @@ pub async fn bundle(
     registry_path: &Path,
 ) -> Result<BundleOutput> {
     let absolute = |path: &str| root.join(path).to_string_lossy().into_owned();
-    let dictionary_base_loader =
-        canonicalize(root.join("node_modules/kuromoji/src/loader/DictionaryLoader.js"))
-            .context("locate the installed Kuromoji dictionary loader")?
-            .to_string_lossy()
-            .into_owned();
     let aliases = [
         (
             REGISTRY_SPECIFIER,
@@ -253,11 +200,7 @@ pub async fn bundle(
     .map(|(name, path)| (name.to_string(), vec![Some(absolute(path))]))
     .collect();
     let plugin = TextlintBundlePlugin {
-        dictionary_loader: absolute("js/embedded-dictionary-loader.cjs"),
-        dictionary_base_loader,
-        conjunctive_particle_rule: absolute(
-            "node_modules/textlint-rule-no-doubled-conjunctive-particle-ga/lib/no-doubled-conjunctive-particle-ga.js",
-        ),
+        dictionary_platform: absolute("js/shim/kuromojin.cjs"),
     };
     let options = BundlerOptions {
         cwd: Some(root.to_path_buf()),
