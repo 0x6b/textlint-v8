@@ -82,7 +82,7 @@ Lint formatters are `checkstyle`, `compact`, `github`, `jslint-xml`, `json`, `ju
 
 ### CLI compatibility
 
-`textlint-v8` embeds textlint 16.1.1 and supports normal file, directory, glob, stdin, ignore, fix, formatter, and output workflows. `--experimental` is accepted as a compatibility no-op.
+`textlint-v8` embeds textlint 16.1.2 and supports normal file, directory, glob, stdin, ignore, fix, formatter, and output workflows. `--experimental` is accepted as a compatibility no-op.
 
 Rule and plugin configuration is intentionally replaced by the embedded rule set. Cache, debug logging, and dynamically loaded external formatters are not supported.
 

@@ -27,11 +27,11 @@ cli = [
 [dependencies]
 anyhow = { version = "1.0.104", optional = true }
 axum = { version = "0.8.9", optional = true }
-clap = { version = "4.6.8", features = ["derive"], optional = true }
+clap = { version = "4.6.9", features = ["derive"], optional = true }
 flate2 = "1.1.11"
 glob = { version = "0.3.4", optional = true }
 globset = { version = "0.4.21", optional = true }
-rmcp = { version = "3.10.0", default-features = false, features = ["macros", "server", "transport-io", "transport-streamable-http-server"], optional = true }
+rmcp = { version = "3.11.0", default-features = false, features = ["macros", "server", "transport-io", "transport-streamable-http-server"], optional = true }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"
