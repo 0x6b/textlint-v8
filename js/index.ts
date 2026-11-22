@@ -51,7 +51,6 @@ declare const __TEXTLINT_V8_CONFIG__: BuildConfig;
 
 Object.assign(globalThis, {
   window: globalThis,
-  kuromojin: { dicPath: "embedded" },
   __textlintV8Files: new Map<string, string>(),
 });
 

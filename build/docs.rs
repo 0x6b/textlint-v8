@@ -1,24 +1,6 @@
-use std::{
-    fs::{create_dir_all, write},
-    path::Path,
-};
+use std::{fs::write, path::Path};
 
 use anyhow::{Context, Result};
-
-const DICTIONARY_FILES: [&str; 12] = [
-    "base.dat.gz",
-    "check.dat.gz",
-    "tid.dat.gz",
-    "tid_pos.dat.gz",
-    "tid_map.dat.gz",
-    "cc.dat.gz",
-    "unk.dat.gz",
-    "unk_pos.dat.gz",
-    "unk_map.dat.gz",
-    "unk_char.dat.gz",
-    "unk_compat.dat.gz",
-    "unk_invoke.dat.gz",
-];
 
 pub fn write_placeholder_assets(out_dir: &Path) -> Result<()> {
     write(
@@ -32,11 +14,6 @@ pub fn write_placeholder_assets(out_dir: &Path) -> Result<()> {
     )
     .context("write docs.rs notice placeholder")?;
 
-    let dictionary_dir = out_dir.join("kuromoji");
-    create_dir_all(&dictionary_dir).context("create docs.rs dictionary placeholder directory")?;
-    for filename in DICTIONARY_FILES {
-        write(dictionary_dir.join(filename), [])
-            .with_context(|| format!("write docs.rs dictionary placeholder {filename}"))?;
-    }
+    write(out_dir.join("kuromojin.dict"), []).context("write docs.rs dictionary placeholder")?;
     Ok(())
 }

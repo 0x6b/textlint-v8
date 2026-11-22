@@ -163,7 +163,7 @@ To add or change the embedded rules, fork this repository and follow these steps
 
    `textlint-v8.lock` records the exact npm versions, dependency edges, tarball URLs, and integrity hashes selected by the Rust build. Normal builds install that frozen graph directly and never perform version resolution or run lifecycle scripts. The built-in resolver intentionally supports only registry packages and the semver dependency specifications used by the current graph; unsupported specifications fail explicitly instead of falling back to an external package manager.
 
-4. If the package uses Node APIs, add only the required functionality to `js/shim/` and the Rolldown aliases. For rules that use morphological analysis, check whether the existing Kuromoji bridge is sufficient.
+4. If the package uses Node APIs, add only the required functionality to `js/shim/` and the Rolldown aliases. Rules that use Kuromojin share the embedded dictionary through the V8 bridge.
 5. Check formatting, linting, tests, and the generated bundle.
 
    ```console
@@ -196,7 +196,7 @@ It is also made possible by [Rust](https://www.rust-lang.org/), [V8](https://v8.
 
 The original source code in this repository is licensed under the MIT License. See [LICENSE](./LICENSE) for details.
 
-Distributed binaries also contain third-party Rust crates, V8, bundled npm packages, and Kuromoji/IPADIC dictionary data under their respective licenses. Run `textlint-v8 --licenses` to print the license and attribution notices embedded in the binary.
+Distributed binaries also contain third-party Rust crates, V8, bundled npm packages, and Kuromojin's IPADIC-derived dictionary under their respective licenses. Run `textlint-v8 --licenses` to print the license and attribution notices embedded in the binary.
 
 ## Informal Benchmark
 
