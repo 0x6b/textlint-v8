@@ -8,7 +8,7 @@
     "@0x6b/textlint-rule-no-numbered-headings-and-bullets": "0.2.2",
     "@0x6b/textlint-rule-no-smart-quotes": "0.1.0",
     "@0x6b/textlint-rule-normalize-whitespaces": "1.2.1",
-    "@textlint-ja/textlint-rule-preset-ai-writing": "1.7.1",
+    "@textlint-ja/textlint-rule-preset-ai-writing": "1.7.2",
     "@textlint/fixer-formatter": "16.1.2",
     "@textlint/linter-formatter": "16.1.2",
     "@textlint-rule/textlint-rule-no-invalid-control-character": "3.0.0",
